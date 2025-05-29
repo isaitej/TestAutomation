@@ -1,37 +1,52 @@
-name: UiPath Test Automation CI
+name: UiPath Publish to Orchestrator
 
 on:
   push:
     branches:
-      - main
+      - main   # or update if using a different branch
   pull_request:
+    branches:
+      - main
 
 jobs:
-  testautomation:
+  publish-uipath:
     runs-on: windows-latest
 
+    env:
+      ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
+      ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
+      ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
+      ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
+      PROJECT_PATH: '.'  # update if your project is in a subfolder
+
     steps:
-    - name: Checkout repository
+    - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Remove existing dotnet tool cache if any
-      shell: pwsh
+    - name: Set up NuGet.config for UiPath CLI
       run: |
-        Remove-Item -Recurse -Force "$env:USERPROFILE\.dotnet\tools\.store\uipath.cli" -ErrorAction SilentlyContinue
+        mkdir .nuget
+        echo "<?xml version=\"1.0\" encoding=\"utf-8\"?>
+        <configuration>
+          <packageSources>
+            <add key=\"UiPath Dev\" value=\"https://www.myget.org/F/uipath-dev/api/v3/index.json\" />
+          </packageSources>
+        </configuration>" > .nuget/NuGet.Config
 
-    - name: Ensure tools folder exists
-      shell: pwsh
+    - name: Install UiPath CLI via NuGet tool manifest
       run: |
-        $toolsPath = "$PWD/tools"
-        if (-not (Test-Path $toolsPath)) {
-          New-Item -ItemType Directory -Path $toolsPath -Force | Out-Null
-        }
-        echo "$toolsPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        dotnet new tool-manifest
+        dotnet tool install UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+        dotnet tool restore
 
-    - name: Install UiPath CLI locally
-      shell: pwsh
-      run: dotnet tool install UiPath.CLI --tool-path ./tools --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+    - name: Verify UiPath CLI version
+      run: dotnet tool run uipath --version
 
-    - name: Verify UiPath CLI installation
-      shell: pwsh
-      run: ./tools/uipath --version
+    - name: Publish to Orchestrator
+      run: |
+        dotnet tool run uipath project push `
+          --project-path "${{ env.PROJECT_PATH }}" `
+          --orchestratorUrl "${{ env.ORCH_URL }}" `
+          --clientId "${{ env.ORCH_CLIENT_ID }}" `
+          --clientSecret "${{ env.ORCH_CLIENT_SECRET }}" `
+          --tenant "${{ env.ORCH_TENANT }}"
