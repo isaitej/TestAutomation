@@ -15,7 +15,7 @@ jobs:
       ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
       ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
       ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-      PROJECT_PATH: ./TestAutomation   # adjust if your project is in a subfolder
+      PROJECT_PATH: ./TestAutomation   # adjust this path if needed
 
     steps:
     - name: Checkout repo
@@ -38,9 +38,12 @@ jobs:
     - name: Install UiPath CLI globally
       shell: pwsh
       run: |
-        dotnet tool uninstall UiPath.CLI -g || Write-Host "No existing uninstall"
-        dotnet tool install UiPath.CLI -g --version 1.0.7985.19721 --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+        dotnet tool install UiPath.CLI -g --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
         echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
+
+    - name: List installed global dotnet tools (debug)
+      shell: pwsh
+      run: dotnet tool list -g
 
     - name: Verify UiPath CLI version
       shell: pwsh
