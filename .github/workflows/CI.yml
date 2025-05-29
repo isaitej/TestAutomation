@@ -15,7 +15,7 @@ jobs:
       ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
       ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
       ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-      PROJECT_PATH: ./TestAutomation  # Folder name where project is cloned
+      PROJECT_PATH: ./TestAutomation   # adjust if your project is in a subfolder
 
     steps:
     - name: Checkout repo
@@ -35,23 +35,16 @@ jobs:
         Add-Content ".nuget/NuGet.Config" '  </packageSources>'
         Add-Content ".nuget/NuGet.Config" '</configuration>'
 
-    - name: Install UiPath CLI using tool-path
+    - name: Install UiPath CLI globally
       shell: pwsh
       run: |
-        $toolPath = "$env:USERPROFILE\.dotnet-tools"
-        New-Item -ItemType Directory -Force -Path $toolPath | Out-Null
-
-        dotnet tool install UiPath.CLI `
-          --version 1.0.7985.19721 `
-          --tool-path $toolPath `
-          --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
-
-        echo "$toolPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
+        dotnet tool uninstall UiPath.CLI -g || Write-Host "No existing uninstall"
+        dotnet tool install UiPath.CLI -g --version 1.0.7985.19721 --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+        echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
 
     - name: Verify UiPath CLI version
       shell: pwsh
-      run: |
-        uipath --version
+      run: uipath --version
 
     - name: Publish project to Orchestrator
       shell: pwsh
