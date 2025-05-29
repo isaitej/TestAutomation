@@ -1,4 +1,4 @@
-name: UiPath CI
+name: UiPath Publish to Orchestrator
 
 on:
   push:
@@ -9,25 +9,49 @@ on:
       - main
 
 jobs:
-  build-test:
+  publish-uipath:
     runs-on: windows-latest
 
+    env:
+      ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
+      ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
+      ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
+      ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
+      PROJECT_PATH: ${{ secrets.UIPATH_FOLDER_PATH }}
+
     steps:
-    - name: Checkout repository
+    - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Clear NuGet cache
-      shell: pwsh
-      run: dotnet nuget locals all --clear
+    - name: Setup NuGet.config for UiPath CLI
+      run: |
+        mkdir -p .nuget
+        echo "<?xml version=\"1.0\" encoding=\"utf-8\"?>
+<configuration>
+  <packageSources>
+    <add key=\"UiPath Dev\" value=\"https://www.myget.org/F/uipath-dev/api/v3/index.json\" />
+  </packageSources>
+</configuration>" > .nuget/NuGet.Config
 
-    - name: Install UiPath CLI globally
-      shell: pwsh
-      run: dotnet tool install --global UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+    - name: Create dotnet tool manifest if missing
+      run: |
+        if (-not (Test-Path -Path "./.config/dotnet-tools.json")) {
+          dotnet new tool-manifest
+        }
 
-    - name: Add dotnet global tools to PATH
-      shell: pwsh
-      run: echo "C:\Users\runneradmin\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+    - name: Install UiPath CLI tool locally
+      run: |
+        dotnet tool install UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json --version 1.0.0-preview-3 || echo "Tool already installed"
+        dotnet tool restore
 
-    - name: Verify UiPath CLI installation
-      shell: pwsh
-      run: uipath --version
+    - name: Verify UiPath CLI version
+      run: dotnet tool run uipath.cli --version
+
+    - name: Publish project to Orchestrator
+      run: |
+        dotnet tool run uipath.cli project push `
+          --project-path "${{ env.PROJECT_PATH }}" `
+          --orchestratorUrl "${{ env.ORCH_URL }}" `
+          --clientId "${{ env.ORCH_CLIENT_ID }}" `
+          --clientSecret "${{ env.ORCH_CLIENT_SECRET }}" `
+          --tenant "${{ env.ORCH_TENANT }}"
