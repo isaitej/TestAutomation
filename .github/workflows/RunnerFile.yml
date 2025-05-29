@@ -1,0 +1,33 @@
+name: Run UiPath Test Set
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  trigger-uipath-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Auth Token from UiPath
+        id: get_token
+        run: |
+          RESPONSE=$(curl -s -X POST "https://cloud.uipath.com/identity_/connect/token" \
+          -H "Content-Type: application/x-www-form-urlencoded" \
+          -d "grant_type=client_credentials&client_id=${{ secrets.UIPATH_CLIENT_ID }}&client_secret=${{ secrets.UIPATH_CLIENT_SECRET }}&scope=OR.TestSetExecution OR.Execution OR.Folders.Read")
+
+          echo "$RESPONSE" | jq -r '.access_token' > token.txt
+
+      - name: Trigger Test Set Execution
+        run: |
+          TOKEN=$(cat token.txt)
+
+          curl -X POST "https://cloud.uipath.com/testbfsvyha/DefaultTenant/odata/TestSetExecutions/UiPath.Server.Configuration.OData.StartTestSetExecution" \
+          -H "Authorization: Bearer $TOKEN" \
+          -H "Content-Type: application/json" \
+          -d '{
+              "TestSetId": "Test1",
+              "Strategy": "ModernJobsCount",
+              "JobsCount": 1,
+              "FolderPath": "Shared"
+          }'
