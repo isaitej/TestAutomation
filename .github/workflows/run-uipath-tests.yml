@@ -1,4 +1,4 @@
-name: UiPath CI - Build, Test, and Publish
+name: Publish UiPath Project
 
 on:
   push:
@@ -6,53 +6,39 @@ on:
       - main
 
 jobs:
-  uipath-ci:
+  publish:
     runs-on: windows-latest
 
     steps:
-      - name: ⬇️ Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: 🛠 Install UiPath CLI
-        run: dotnet tool install --global UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+      - name: Setup dotnet tools folder and add to PATH
         shell: pwsh
-
-      - name: ✅ Validate project
-        run: uipcli project validate --path "$(Get-Location)"
-        shell: pwsh
-
-      - name: 📦 Package project
-        run: uipcli project pack --path "$(Get-Location)" --output "$(Get-Location)\output"
-        shell: pwsh
-
-      - name: 🚀 Push package to Orchestrator
         run: |
-          $packagePath = Get-ChildItem "$(Get-Location)\output" -Filter "*.nupkg" | Select-Object -First 1
-          uipcli package push `
-            --path $packagePath.FullName `
-            --cloud `
-            --clientId "${{ secrets.UIPATH_CLIENT_ID }}" `
-            --clientSecret "${{ secrets.UIPATH_CLIENT_SECRET }}" `
-            --accountLogicalName "${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}" `
-            --tenantLogicalName "${{ secrets.UIPATH_TENANT_LOGICAL_NAME }}" `
-            --folder "${{ secrets.UIPATH_FOLDER_NAME }}"
-        shell: pwsh
+          $toolsPath = "$env:USERPROFILE\.dotnet\tools"
+          if (-Not (Test-Path $toolsPath)) {
+            New-Item -ItemType Directory -Path $toolsPath | Out-Null
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value $toolsPath
 
-      - name: 🧪 Run Test Cases and Generate Report
+      - name: Install UiPath CLI locally
+        shell: pwsh
+        run: dotnet tool install UiPath.CLI --tool-path $env:USERPROFILE\.dotnet\tools --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+
+      - name: Publish project to Orchestrator using Client ID auth
+        shell: pwsh
+        env:
+          UIPATH_ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
+          UIPATH_ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
+          UIPATH_ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
+          UIPATH_ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
         run: |
-          uipcli test run `
-            --output "$(Get-Location)\test-results" `
-            --format JUnit `
-            --cloud `
-            --clientId "${{ secrets.UIPATH_CLIENT_ID }}" `
-            --clientSecret "${{ secrets.UIPATH_CLIENT_SECRET }}" `
-            --accountLogicalName "${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}" `
-            --tenantLogicalName "${{ secrets.UIPATH_TENANT_LOGICAL_NAME }}" `
-            --folder "${{ secrets.UIPATH_FOLDER_NAME }}"
-        shell: pwsh
+          uipath login --url $env:UIPATH_ORCHESTRATOR_URL `
+                       --client-id $env:UIPATH_CLIENT_ID `
+                       --client-secret $env:UIPATH_CLIENT_SECRET `
+                       --tenant $env:UIPATH_TENANT_NAME
 
-      # - name: 📤 Upload JUnit Test Report
-      #   uses: actions/upload-artifact@v3
-      #   with:
-      #     name: uipath-test-report
-      #     path: test-results/*.xml
+          uipath publish --path . --packageVersion "1.0.${{ github.run_number }}"
+
+          uipath logout
