@@ -1,15 +1,12 @@
-name: UiPath Publish to Orchestrator
+name: UiPath Publish via REST API
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
 
 jobs:
-  publish-uipath:
+  publish:
     runs-on: windows-latest
 
     env:
@@ -17,41 +14,48 @@ jobs:
       ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
       ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
       ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-      PROJECT_PATH: ${{ secrets.UIPATH_FOLDER_PATH }}
+      PACKAGE_PATH: ./TestAutomation/package.nupkg   # Your package path
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Setup NuGet.config for UiPath CLI
-      run: |
-        mkdir -p .nuget
-        echo "<?xml version=\"1.0\" encoding=\"utf-8\"?>
-<configuration>
-  <packageSources>
-    <add key=\"UiPath Dev\" value=\"https://www.myget.org/F/uipath-dev/api/v3/index.json\" />
-  </packageSources>
-</configuration>" > .nuget/NuGet.Config
+      - name: Get OAuth Token
+        id: get_token
+        shell: pwsh
+        run: |
+          $body = @{
+            grant_type    = "client_credentials"
+            client_id     = "${{ env.ORCH_CLIENT_ID }}"
+            client_secret = "${{ env.ORCH_CLIENT_SECRET }}"
+            scope         = "OR.Jobs"
+          }
+          $resp = Invoke-RestMethod -Method Post -Uri "${{ env.ORCH_URL }}/api/account/authenticate" -Body $body
+          Write-Output "token=$($resp.access_token)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
 
-    - name: Create dotnet tool manifest if missing
-      run: |
-        if (-not (Test-Path -Path "./.config/dotnet-tools.json")) {
-          dotnet new tool-manifest
-        }
+      - name: Upload Package to Orchestrator
+        shell: pwsh
+        run: |
+          $token = "${{ steps.get_token.outputs.token }}"
+          $packagePath = "${{ env.PACKAGE_PATH }}"
+          $uri = "${{ env.ORCH_URL }}/odata/Processes/UiPath.Server.Configuration.OData.UploadPackage"
+          $headers = @{
+            Authorization = "Bearer $token"
+          }
+          # Read package content
+          $bytes = [System.IO.File]::ReadAllBytes($packagePath)
+          $content = [System.Net.Http.ByteArrayContent]::new($bytes)
+          $content.Headers.Add("Content-Type", "application/octet-stream")
 
-    - name: Install UiPath CLI tool locally
-      run: |
-        dotnet tool install UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json --version 1.0.0-preview-3 || echo "Tool already installed"
-        dotnet tool restore
-
-    - name: Verify UiPath CLI version
-      run: dotnet tool run uipath.cli --version
-
-    - name: Publish project to Orchestrator
-      run: |
-        dotnet tool run uipath.cli project push `
-          --project-path "${{ env.PROJECT_PATH }}" `
-          --orchestratorUrl "${{ env.ORCH_URL }}" `
-          --clientId "${{ env.ORCH_CLIENT_ID }}" `
-          --clientSecret "${{ env.ORCH_CLIENT_SECRET }}" `
-          --tenant "${{ env.ORCH_TENANT }}"
+          $client = New-Object System.Net.Http.HttpClient
+          foreach ($header in $headers.GetEnumerator()) {
+            $client.DefaultRequestHeaders.Add($header.Key, $header.Value)
+          }
+          $response = $client.PostAsync($uri, $content).Result
+          if(-not $response.IsSuccessStatusCode) {
+            Write-Error "Package upload failed with status code $($response.StatusCode)"
+            exit 1
+          }
+          else {
+            Write-Host "Package uploaded successfully"
+          }
