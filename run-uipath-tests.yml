@@ -1,0 +1,27 @@
+name: Run UiPath Tests
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  trigger-uipath:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to UiPath
+        run: |
+          curl -X POST ${{ secrets.UIPATH_ORCHESTRATOR_URL }}/identity_/connect/token \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "grant_type=client_credentials&client_id=${{ secrets.UIPATH_CLIENT_ID }}&client_secret=${{ secrets.UIPATH_CLIENT_SECRET }}&scope=OR.Execution OR.TestSetExecution"
+
+      - name: Trigger Test Set Execution
+        run: |
+          curl -X POST ${{ secrets.UIPATH_ORCHESTRATOR_URL }}/odata/TestSetExecutions/UiPath.Server.Configuration.OData.StartTestSetExecution \
+            -H "Authorization: Bearer <REPLACE_WITH_TOKEN_FROM_PREVIOUS_STEP>" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "TestSetId": "<your-testset-id>",
+              "Strategy": "ModernJobsCount",
+              "JobsCount": 1
+            }'
