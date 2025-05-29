@@ -3,7 +3,7 @@ name: UiPath Publish to Orchestrator
 on:
   push:
     branches:
-      - main   # or update if using a different branch
+      - main
   pull_request:
     branches:
       - main
@@ -17,7 +17,7 @@ jobs:
       ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
       ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
       ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-      PROJECT_PATH: ${{ secrets.UIPATH_FOLDER_PATH }}  # update if your project is in a subfolder
+      PROJECT_PATH: ${{ secrets.UIPATH_FOLDER_PATH }}
 
     steps:
     - name: Checkout code
@@ -33,18 +33,18 @@ jobs:
           </packageSources>
         </configuration>" > .nuget/NuGet.Config
 
-    - name: Install UiPath CLI via NuGet tool manifest
+    - name: Install UiPath CLI tool manifest
       run: |
-        dotnet new tool-manifest
-        dotnet tool install UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+        dotnet new tool-manifest --force
+        dotnet tool install UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json --version 1.0.0-preview-3 --ignore-failed-sources || true
         dotnet tool restore
 
     - name: Verify UiPath CLI version
-      run: dotnet tool run uipath --version
+      run: dotnet tool run uipath.cli --version
 
     - name: Publish to Orchestrator
       run: |
-        dotnet tool run uipath project push `
+        dotnet tool run uipath.cli project push `
           --project-path "${{ env.PROJECT_PATH }}" `
           --orchestratorUrl "${{ env.ORCH_URL }}" `
           --clientId "${{ env.ORCH_CLIENT_ID }}" `
