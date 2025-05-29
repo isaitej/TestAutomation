@@ -1,4 +1,4 @@
-name: Run UiPath Tests
+name: Publish UiPath Project to Orchestrator
 
 on:
   push:
@@ -6,21 +6,38 @@ on:
       - main
 
 jobs:
-  trigger-uipath:
-    runs-on: ubuntu-latest
+  publish-uipath-package:
+    runs-on: windows-latest  # Required for UiPath CLI
     steps:
-      - name: Authenticate to UiPath
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Setup .NET (for UiPath CLI)
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Install UiPath CLI
+        run: dotnet tool install --global UiPath.CLI
+
+      - name: Authenticate to Orchestrator
         run: |
-          curl -X POST ${{ secrets.UIPATH_ORCHESTRATOR_URL }}/identity_/connect/token \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -d "grant_type=client_credentials&client_id=${{ secrets.UIPATH_CLIENT_ID }}&client_secret=${{ secrets.UIPATH_CLIENT_SECRET }}&scope=OR.Execution OR.TestSetExecution"
-      - name: Trigger Test Set Execution
+          uipcli config set -a cloud \
+            --account-name "${{ secrets.UIPATH_ACCOUNT_NAME }}" \
+            --client-id "${{ secrets.UIPATH_CLIENT_ID }}" \
+            --user-key "${{ secrets.UIPATH_CLIENT_SECRET }}" \
+            --service "${{ secrets.UIPATH_TENANT_NAME }}"
+
+      - name: Publish Package to Orchestrator
         run: |
-          curl -X POST ${{ secrets.UIPATH_ORCHESTRATOR_URL }}/odata/TestSetExecutions/UiPath.Server.Configuration.OData.StartTestSetExecution \
-            -H "Authorization: Bearer <REPLACE_WITH_TOKEN_FROM_PREVIOUS_STEP>" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "TestSetId": "<your-testset-id>",
-              "Strategy": "ModernJobsCount",
-              "JobsCount": 1
-            }'
+          uipcli project publish \
+            --path . \
+            --output-folder ./output \
+            --project-version 1.0.$GITHUB_RUN_NUMBER \
+            --force
+
+      - name: Upload Package to Orchestrator
+        run: |
+          uipcli package push \
+            --file ./output/*.nupkg \
+            --folder "${{ secrets.UIPATH_FOLDER_PATH }}"
