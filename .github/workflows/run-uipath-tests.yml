@@ -1,44 +1,39 @@
-name: Publish UiPath Project
+name: UiPath Publish to Orchestrator
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
-  publish:
+  publish-uipath:
     runs-on: windows-latest
 
+    env:
+      ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
+      ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
+      ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
+      ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
+      PROJECT_PATH: ${{ secrets.UIPATH_FOLDER_PATH }}
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Setup dotnet tools folder and add to PATH
-        shell: pwsh
-        run: |
-          $toolsPath = "$env:USERPROFILE\.dotnet\tools"
-          if (-Not (Test-Path $toolsPath)) {
-            New-Item -ItemType Directory -Path $toolsPath | Out-Null
-          }
-          Add-Content -Path $env:GITHUB_PATH -Value $toolsPath
+    - name: Install UiPath CLI globally
+      run: |
+        dotnet tool install --global UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+        echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
 
-      - name: Install UiPath CLI locally
-        shell: pwsh
-        run: dotnet tool install UiPath.CLI --tool-path $env:USERPROFILE\.dotnet\tools --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+    - name: Check UiPath CLI version
+      run: uipath --version
 
-      - name: Publish project to Orchestrator using Client ID auth
-        shell: pwsh
-        env:
-          UIPATH_ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
-          UIPATH_ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
-          UIPATH_ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
-          UIPATH_ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-        run: |
-          uipath login --url $env:UIPATH_ORCHESTRATOR_URL `
-                       --client-id $env:UIPATH_CLIENT_ID `
-                       --client-secret $env:UIPATH_CLIENT_SECRET `
-                       --tenant $env:UIPATH_TENANT_NAME
-
-          uipath publish --path . --packageVersion "1.0.${{ github.run_number }}"
-
-          uipath logout
+    - name: Publish to Orchestrator
+      run: |
+        uipath project push `
+          --project-path "${{ env.PROJECT_PATH }}" `
+          --orchestratorUrl "${{ env.ORCH_URL }}" `
+          --clientId "${{ env.ORCH_CLIENT_ID }}" `
+          --clientSecret "${{ env.ORCH_CLIENT_SECRET }}" `
+          --tenant "${{ env.ORCH_TENANT }}"
