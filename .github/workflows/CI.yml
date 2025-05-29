@@ -1,58 +1,30 @@
-name: UiPath Publish to Orchestrator
+name: UiPath Publish via Docker CLI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   publish-uipath:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest   # Use Ubuntu runner for Docker
 
     env:
       ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
       ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
       ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
       ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-      PROJECT_PATH: ./TestAutomation   # adjust if needed
+      PROJECT_PATH: ./TestAutomation  # Adjust as per your repo structure
 
     steps:
-    - name: Checkout repo
+    - name: Checkout code
       uses: actions/checkout@v3
-      with:
-        repository: isaitej/TestAutomation
-        token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Setup NuGet.config for UiPath CLI
-      shell: pwsh
+    - name: Publish UiPath project using Docker CLI
       run: |
-        New-Item -ItemType Directory -Force -Path ".nuget"
-        @'
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <add key="UiPath Dev" value="https://www.myget.org/F/uipath-dev/api/v3/index.json" />
-  </packageSources>
-</configuration>
-'@ | Out-File -Encoding utf8 -FilePath ".nuget/NuGet.Config"
-
-    - name: Setup .NET tool manifest and install UiPath CLI locally
-      shell: pwsh
-      run: |
-        dotnet new tool-manifest --force
-        dotnet tool install UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json --version 1.0.7985.19721
-
-    - name: Verify UiPath CLI version
-      shell: pwsh
-      run: dotnet tool run uipath --version
-
-    - name: Publish project to Orchestrator
-      shell: pwsh
-      run: |
-        dotnet tool run uipath project push `
-          --project-path "${{ env.PROJECT_PATH }}" `
-          --orchestratorUrl "${{ env.ORCH_URL }}" `
-          --clientId "${{ env.ORCH_CLIENT_ID }}" `
-          --clientSecret "${{ env.ORCH_CLIENT_SECRET }}" `
-          --tenant "${{ env.ORCH_TENANT }}"
+        docker run --rm \
+          -v ${{ github.workspace }}/${{ env.PROJECT_PATH }}:/workspace \
+          uipath/uipath-cli
