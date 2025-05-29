@@ -14,7 +14,7 @@ jobs:
       ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
       ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
       ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-      PACKAGE_PATH: ./TestAutomation/package.nupkg   # Your package path
+      PACKAGE_PATH: ./TestAutomation/package.nupkg  # adjust path if needed
 
     steps:
       - name: Checkout code
@@ -30,7 +30,14 @@ jobs:
             client_secret = "${{ env.ORCH_CLIENT_SECRET }}"
             scope         = "OR.Jobs"
           }
-          $resp = Invoke-RestMethod -Method Post -Uri "${{ env.ORCH_URL }}/api/account/authenticate" -Body $body
+          # Convert body to URL-encoded string
+          $form = $body.GetEnumerator() | ForEach-Object { "$($_.Key)=$([uri]::EscapeDataString($_.Value))" } -join '&'
+
+          $resp = Invoke-RestMethod -Method Post `
+            -Uri "${{ env.ORCH_URL }}/api/account/authenticate" `
+            -Body $form `
+            -ContentType 'application/x-www-form-urlencoded'
+
           Write-Output "token=$($resp.access_token)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
 
       - name: Upload Package to Orchestrator
@@ -42,7 +49,6 @@ jobs:
           $headers = @{
             Authorization = "Bearer $token"
           }
-          # Read package content
           $bytes = [System.IO.File]::ReadAllBytes($packagePath)
           $content = [System.Net.Http.ByteArrayContent]::new($bytes)
           $content.Headers.Add("Content-Type", "application/octet-stream")
@@ -52,10 +58,9 @@ jobs:
             $client.DefaultRequestHeaders.Add($header.Key, $header.Value)
           }
           $response = $client.PostAsync($uri, $content).Result
-          if(-not $response.IsSuccessStatusCode) {
+          if (-not $response.IsSuccessStatusCode) {
             Write-Error "Package upload failed with status code $($response.StatusCode)"
             exit 1
-          }
-          else {
+          } else {
             Write-Host "Package uploaded successfully"
           }
