@@ -15,11 +15,14 @@ jobs:
       ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
       ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
       ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-      PROJECT_PATH: ${{ secrets.UIPATH_FOLDER_PATH }}
+      PROJECT_PATH: ./TestAutomation  # Folder name where project is cloned
 
     steps:
-    - name: Checkout code
+    - name: Checkout repo
       uses: actions/checkout@v3
+      with:
+        repository: isaitej/TestAutomation
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Setup NuGet.config for UiPath CLI
       shell: pwsh
@@ -36,22 +39,23 @@ jobs:
       shell: pwsh
       run: |
         $toolPath = "$env:USERPROFILE\.dotnet-tools"
+        New-Item -ItemType Directory -Force -Path $toolPath | Out-Null
+
         dotnet tool install UiPath.CLI `
           --version 1.0.7985.19721 `
           --tool-path $toolPath `
           --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
-        echo "##[add-path]$toolPath"
+
+        echo "$toolPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
 
     - name: Verify UiPath CLI version
       shell: pwsh
       run: |
-        $env:PATH = "$env:USERPROFILE\.dotnet-tools;$env:PATH"
         uipath --version
 
     - name: Publish project to Orchestrator
       shell: pwsh
       run: |
-        $env:PATH = "$env:USERPROFILE\.dotnet-tools;$env:PATH"
         uipath project push `
           --project-path "${{ env.PROJECT_PATH }}" `
           --orchestratorUrl "${{ env.ORCH_URL }}" `
