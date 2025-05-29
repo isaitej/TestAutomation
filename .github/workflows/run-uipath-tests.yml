@@ -2,9 +2,8 @@ name: UiPath Publish to Orchestrator
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   publish-uipath:
@@ -15,25 +14,25 @@ jobs:
       ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
       ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
       ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-      PROJECT_PATH: ${{ secrets.UIPATH_FOLDER_PATH }}
+      PROJECT_PATH: ./TestAutomation  # Your UiPath project folder path
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-    - name: Install UiPath CLI globally
-      run: |
-        dotnet tool install --global UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
-        echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
+      - name: Set up .NET Tool Manifest
+        run: |
+          dotnet new tool-manifest
+          dotnet tool install UiPath.CLI --version 23.10.8647 --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
 
-    - name: Check UiPath CLI version
-      run: uipath --version
+      - name: Display UiPath CLI Version
+        run: dotnet tool run uipath --version
 
-    - name: Publish to Orchestrator
-      run: |
-        uipath project push `
-          --project-path "${{ env.PROJECT_PATH }}" `
-          --orchestratorUrl "${{ env.ORCH_URL }}" `
-          --clientId "${{ env.ORCH_CLIENT_ID }}" `
-          --clientSecret "${{ env.ORCH_CLIENT_SECRET }}" `
-          --tenant "${{ env.ORCH_TENANT }}"
+      - name: Publish Project to Orchestrator
+        run: |
+          dotnet tool run uipath project push `
+            --project-path "${{ env.PROJECT_PATH }}" `
+            --orchestratorUrl "${{ env.ORCH_URL }}" `
+            --clientId "${{ env.ORCH_CLIENT_ID }}" `
+            --clientSecret "${{ env.ORCH_CLIENT_SECRET }}" `
+            --tenant "${{ env.ORCH_TENANT }}"
