@@ -3,10 +3,10 @@ name: UiPath CI
 on:
   push:
     branches:
-      - '**'
+      - main
   pull_request:
     branches:
-      - '**'
+      - main
 
 jobs:
   build-test:
@@ -16,21 +16,18 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Clean tools folder
+    - name: Clear NuGet cache
       shell: pwsh
-      run: |
-        if (Test-Path ./tools) {
-          Remove-Item -Recurse -Force ./tools
-        }
+      run: dotnet nuget locals all --clear
 
-    - name: Setup tools folder path
+    - name: Install UiPath CLI globally
       shell: pwsh
-      run: echo "$PWD/tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      run: dotnet tool install --global UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
 
-    - name: Install UiPath CLI locally
+    - name: Add dotnet global tools to PATH
       shell: pwsh
-      run: dotnet tool install UiPath.CLI --tool-path $PWD/tools --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+      run: echo "C:\Users\runneradmin\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
     - name: Verify UiPath CLI installation
       shell: pwsh
-      run: $toolsPath = "$PWD/tools"; & "$toolsPath\uipath.exe" --version
+      run: uipath --version
