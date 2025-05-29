@@ -2,11 +2,9 @@ name: UiPath Publish to Orchestrator
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   publish-uipath:
@@ -34,27 +32,27 @@ jobs:
         Add-Content ".nuget/NuGet.Config" '  </packageSources>'
         Add-Content ".nuget/NuGet.Config" '</configuration>'
 
-    - name: Create dotnet tool manifest if missing
+    - name: Install UiPath CLI using tool-path
       shell: pwsh
       run: |
-        if (-not (Test-Path -Path "./.config/dotnet-tools.json")) {
-          dotnet new tool-manifest
-        }
-
-    - name: Install UiPath CLI tool locally
-      shell: pwsh
-      run: |
-        dotnet tool install UiPath.CLI --version 1.0.7985.19721 --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json || Write-Host "Tool already installed"
-        dotnet tool restore
+        $toolPath = "$env:USERPROFILE\.dotnet-tools"
+        dotnet tool install UiPath.CLI `
+          --version 1.0.7985.19721 `
+          --tool-path $toolPath `
+          --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+        echo "##[add-path]$toolPath"
 
     - name: Verify UiPath CLI version
       shell: pwsh
-      run: dotnet tool run uipath.cli --version
+      run: |
+        $env:PATH = "$env:USERPROFILE\.dotnet-tools;$env:PATH"
+        uipath --version
 
     - name: Publish project to Orchestrator
       shell: pwsh
       run: |
-        dotnet tool run uipath.cli project push `
+        $env:PATH = "$env:USERPROFILE\.dotnet-tools;$env:PATH"
+        uipath project push `
           --project-path "${{ env.PROJECT_PATH }}" `
           --orchestratorUrl "${{ env.ORCH_URL }}" `
           --clientId "${{ env.ORCH_CLIENT_ID }}" `
