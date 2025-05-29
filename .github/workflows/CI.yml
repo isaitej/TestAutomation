@@ -24,14 +24,15 @@ jobs:
       uses: actions/checkout@v3
 
     - name: Setup NuGet.config for UiPath CLI
+      shell: pwsh
       run: |
-        mkdir -p .nuget
-        echo "<?xml version=\"1.0\" encoding=\"utf-8\"?>
-<configuration>
-  <packageSources>
-    <add key=\"UiPath Dev\" value=\"https://www.myget.org/F/uipath-dev/api/v3/index.json\" />
-  </packageSources>
-</configuration>" > .nuget/NuGet.Config
+        New-Item -ItemType Directory -Force -Path ".nuget"
+        Add-Content ".nuget/NuGet.Config" '<?xml version="1.0" encoding="utf-8"?>'
+        Add-Content ".nuget/NuGet.Config" '<configuration>'
+        Add-Content ".nuget/NuGet.Config" '  <packageSources>'
+        Add-Content ".nuget/NuGet.Config" '    <add key="UiPath Dev" value="https://www.myget.org/F/uipath-dev/api/v3/index.json" />'
+        Add-Content ".nuget/NuGet.Config" '  </packageSources>'
+        Add-Content ".nuget/NuGet.Config" '</configuration>'
 
     - name: Create dotnet tool manifest if missing
       shell: pwsh
