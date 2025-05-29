@@ -51,8 +51,8 @@ jobs:
             --folder "${{ secrets.UIPATH_FOLDER_NAME }}"
         shell: pwsh
 
-      - name: 📤 Upload JUnit Test Report
-        uses: actions/upload-artifact@v3
-        with:
-          name: uipath-test-report
-          path: test-results/*.xml
+      # - name: 📤 Upload JUnit Test Report
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: uipath-test-report
+      #     path: test-results/*.xml
