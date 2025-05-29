@@ -34,20 +34,24 @@ jobs:
 </configuration>" > .nuget/NuGet.Config
 
     - name: Create dotnet tool manifest if missing
+      shell: pwsh
       run: |
         if (-not (Test-Path -Path "./.config/dotnet-tools.json")) {
           dotnet new tool-manifest
         }
 
     - name: Install UiPath CLI tool locally
+      shell: pwsh
       run: |
-        dotnet tool install UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json --version 1.0.0-preview-3 || echo "Tool already installed"
+        dotnet tool install UiPath.CLI --version 1.0.7985.19721 --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json || Write-Host "Tool already installed"
         dotnet tool restore
 
     - name: Verify UiPath CLI version
+      shell: pwsh
       run: dotnet tool run uipath.cli --version
 
     - name: Publish project to Orchestrator
+      shell: pwsh
       run: |
         dotnet tool run uipath.cli project push `
           --project-path "${{ env.PROJECT_PATH }}" `
