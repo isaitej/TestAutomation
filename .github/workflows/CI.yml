@@ -15,7 +15,7 @@ jobs:
       ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
       ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
       ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-      PROJECT_PATH: ./TestAutomation   # adjust this path if needed
+      PROJECT_PATH: ./TestAutomation   # adjust if needed
 
     steps:
     - name: Checkout repo
@@ -28,31 +28,29 @@ jobs:
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Force -Path ".nuget"
-        Add-Content ".nuget/NuGet.Config" '<?xml version="1.0" encoding="utf-8"?>'
-        Add-Content ".nuget/NuGet.Config" '<configuration>'
-        Add-Content ".nuget/NuGet.Config" '  <packageSources>'
-        Add-Content ".nuget/NuGet.Config" '    <add key="UiPath Dev" value="https://www.myget.org/F/uipath-dev/api/v3/index.json" />'
-        Add-Content ".nuget/NuGet.Config" '  </packageSources>'
-        Add-Content ".nuget/NuGet.Config" '</configuration>'
+        @'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <add key="UiPath Dev" value="https://www.myget.org/F/uipath-dev/api/v3/index.json" />
+  </packageSources>
+</configuration>
+'@ | Out-File -Encoding utf8 -FilePath ".nuget/NuGet.Config"
 
-    - name: Install UiPath CLI globally
+    - name: Setup .NET tool manifest and install UiPath CLI locally
       shell: pwsh
       run: |
-        dotnet tool install UiPath.CLI -g --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
-        echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
-
-    - name: List installed global dotnet tools (debug)
-      shell: pwsh
-      run: dotnet tool list -g
+        dotnet new tool-manifest --force
+        dotnet tool install UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json --version 1.0.7985.19721
 
     - name: Verify UiPath CLI version
       shell: pwsh
-      run: uipath --version
+      run: dotnet tool run uipath --version
 
     - name: Publish project to Orchestrator
       shell: pwsh
       run: |
-        uipath project push `
+        dotnet tool run uipath project push `
           --project-path "${{ env.PROJECT_PATH }}" `
           --orchestratorUrl "${{ env.ORCH_URL }}" `
           --clientId "${{ env.ORCH_CLIENT_ID }}" `
