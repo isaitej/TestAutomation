@@ -17,7 +17,7 @@ jobs:
       ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
       ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
       ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-      PROJECT_PATH: '.'  # update if your project is in a subfolder
+      PROJECT_PATH: ${{ secrets.UIPATH_FOLDER_PATH }}  # update if your project is in a subfolder
 
     steps:
     - name: Checkout code
