@@ -1,4 +1,4 @@
-name: Publish UiPath Project to Orchestrator
+name: UiPath CI - Build, Test, and Publish
 
 on:
   push:
@@ -6,38 +6,53 @@ on:
       - main
 
 jobs:
-  publish-uipath-package:
-    runs-on: windows-latest  # Required for UiPath CLI
+  uipath-ci:
+    runs-on: windows-latest
+
     steps:
-      - name: Checkout Repo
+      - name: ⬇️ Checkout repository
         uses: actions/checkout@v3
 
-      - name: Setup .NET (for UiPath CLI)
-        uses: actions/setup-dotnet@v3
+      - name: 🛠 Install UiPath CLI
+        run: dotnet tool install --global UiPath.CLI --add-source https://www.myget.org/F/uipath-dev/api/v3/index.json
+        shell: pwsh
+
+      - name: ✅ Validate project
+        run: uipcli project validate --path "$(Get-Location)"
+        shell: pwsh
+
+      - name: 📦 Package project
+        run: uipcli project pack --path "$(Get-Location)" --output "$(Get-Location)\output"
+        shell: pwsh
+
+      - name: 🚀 Push package to Orchestrator
+        run: |
+          $packagePath = Get-ChildItem "$(Get-Location)\output" -Filter "*.nupkg" | Select-Object -First 1
+          uipcli package push `
+            --path $packagePath.FullName `
+            --cloud `
+            --clientId "${{ secrets.UIPATH_CLIENT_ID }}" `
+            --clientSecret "${{ secrets.UIPATH_CLIENT_SECRET }}" `
+            --accountLogicalName "${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}" `
+            --tenantLogicalName "${{ secrets.UIPATH_TENANT_LOGICAL_NAME }}" `
+            --folder "${{ secrets.UIPATH_FOLDER_NAME }}"
+        shell: pwsh
+
+      - name: 🧪 Run Test Cases and Generate Report
+        run: |
+          uipcli test run `
+            --output "$(Get-Location)\test-results" `
+            --format JUnit `
+            --cloud `
+            --clientId "${{ secrets.UIPATH_CLIENT_ID }}" `
+            --clientSecret "${{ secrets.UIPATH_CLIENT_SECRET }}" `
+            --accountLogicalName "${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}" `
+            --tenantLogicalName "${{ secrets.UIPATH_TENANT_LOGICAL_NAME }}" `
+            --folder "${{ secrets.UIPATH_FOLDER_NAME }}"
+        shell: pwsh
+
+      - name: 📤 Upload JUnit Test Report
+        uses: actions/upload-artifact@v3
         with:
-          dotnet-version: '6.0.x'
-
-      - name: Install UiPath CLI
-        run: dotnet tool install --global UiPath.CLI
-
-      - name: Authenticate to Orchestrator
-        run: |
-          uipcli config set -a cloud \
-            --account-name "${{ secrets.UIPATH_ACCOUNT_NAME }}" \
-            --client-id "${{ secrets.UIPATH_CLIENT_ID }}" \
-            --user-key "${{ secrets.UIPATH_CLIENT_SECRET }}" \
-            --service "${{ secrets.UIPATH_TENANT_NAME }}"
-
-      - name: Publish Package to Orchestrator
-        run: |
-          uipcli project publish \
-            --path . \
-            --output-folder ./output \
-            --project-version 1.0.$GITHUB_RUN_NUMBER \
-            --force
-
-      - name: Upload Package to Orchestrator
-        run: |
-          uipcli package push \
-            --file ./output/*.nupkg \
-            --folder "${{ secrets.UIPATH_FOLDER_PATH }}"
+          name: uipath-test-report
+          path: test-results/*.xml
