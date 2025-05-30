@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "isRoot": true,
+  "tools": {
+    "uipath.cli": {
+      "version": "1.0.7985.19721",
+      "commands": [
+        "uipcli"
+      ]
+    }
+  }
+}
