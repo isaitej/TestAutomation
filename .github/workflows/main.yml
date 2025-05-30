@@ -1,0 +1,39 @@
+name: Deploy UiPath Project to Orchestrator
+
+on:
+  push:
+    branches:
+      - main  # or your desired branch
+
+jobs:
+  deploy:
+    runs-on: windows-latest
+
+    env:
+      ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
+      ORCH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
+      ORCH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
+      ORCH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
+      PROJECT_PATH: ./TestAutomation
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '6.x'
+
+      - name: Restore UiPath CLI from Manifest
+        run: dotnet tool restore
+
+      - name: Publish UiPath Project
+        run: |
+          dotnet tool run uipcli project publish \
+            --project-path "$env:PROJECT_PATH" \
+            --output-path "$env:PROJECT_PATH/published" \
+            --orchestrator-url "$env:UIPATH_ORCHESTRATOR_URL" \
+            --tenant "$env:UIPATH_TENANT_NAME" \
+            --client-id "$env:UIPATH_CLIENT_ID" \
+            --client-secret "$env:UIPATH_CLIENT_SECRET"
