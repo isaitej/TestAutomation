@@ -3,7 +3,7 @@ name: Deploy UiPath Project to Orchestrator
 on:
   push:
     branches:
-      - main  # or your desired branch
+      - main  # change if needed
 
 jobs:
   deploy:
@@ -17,7 +17,7 @@ jobs:
       PROJECT_PATH: ./TestAutomation
 
     steps:
-      - name: Checkout Repo
+      - name: Checkout Code
         uses: actions/checkout@v3
 
       - name: Setup .NET
@@ -25,15 +25,15 @@ jobs:
         with:
           dotnet-version: '6.x'
 
-      - name: Restore UiPath CLI from Manifest
+      - name: Restore UiPath CLI Tool from Manifest
         run: dotnet tool restore
 
-      - name: Publish UiPath Project
+      - name: Publish UiPath Project to Orchestrator
         run: |
-          dotnet tool run uipcli project publish \
-            --project-path "$env:PROJECT_PATH" \
-            --output-path "$env:PROJECT_PATH/published" \
-            --orchestrator-url "$env:UIPATH_ORCHESTRATOR_URL" \
-            --tenant "$env:UIPATH_TENANT_NAME" \
-            --client-id "$env:UIPATH_CLIENT_ID" \
+          dotnet tool run uipcli project publish `
+            --project-path "$env:PROJECT_PATH" `
+            --output-path "$env:PROJECT_PATH/published" `
+            --orchestrator-url "$env:UIPATH_ORCHESTRATOR_URL" `
+            --tenant "$env:UIPATH_TENANT_NAME" `
+            --client-id "$env:UIPATH_CLIENT_ID" `
             --client-secret "$env:UIPATH_CLIENT_SECRET"
