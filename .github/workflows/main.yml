@@ -1,35 +1,42 @@
-name: Publish UiPath Project to Orchestrator
+name: Run UiPath Tests
 
 on:
   push:
-    branches:
-      - main  # or your release branch
+    branches: [ main ]
+  pull_request:
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest  # or windows-latest if you need UiPath CLI support on Windows
+  run-tests:
+    runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-      - name: Set up .NET (if needed for UiPath CLI)
-        uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: '7.x' # match UiPath CLI requirements
+    - name: Install UiPath CLI
+      run: dotnet tool install -g UiPath.CLI
 
-      - name: Install UiPath CLI
-        run: |
-          dotnet tool install --global UiPath.Cli
+    - name: Run UiPath Test Set
+      run: |
+        uipcli test run \
+          --orchestrator-url "${{ secrets.UIPATH_ORCHESTRATOR_URL }}" \
+          --client-id "${{ secrets.UIPATH_CLIENT_ID }}" \
+          --client-secret "${{ secrets.UIPATH_CLIENT_SECRET }}" \
+          --account-logical-name "${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}" \
+          --tenant-logical-name "${{ secrets.UIPATH_TENANT_NAME }}" \
+          --folder-path "${{ secrets.UIPATH_FOLDER_PATH }}" \
+          --test-set "${{ secrets.UIPATH_TESTSET_ID }}" \
+          --format JUnit \
+          --output junit-results.xml
 
-      - name: Login to Orchestrator
-        run: |
-          uipath login --url ${{ secrets.UIPATH_ORCHESTRATOR_URL }} --tenant ${{ secrets.UIPATH_TENANT_NAME }} --client-id ${{ secrets.UIPATH_CLIENT_ID }} --client-secret ${{ secrets.UIPATH_CLIENT_SECRET }}
-
-      - name: Publish project
-        run: |
-          uipath pack --output ./output
-          uipath publish --path ./output/*.nupkg --folder ${{ secrets.UIPATH_FOLDER_PATH }}
-
-      - name: Logout from Orchestrator
-        run: uipath logout
+    - name: Upload test results to Test Manager
+      run: |
+        uipcli test results upload \
+          --file-path "junit-results.xml" \
+          --format "JUnit" \
+          --orchestrator-url "${{ secrets.UIPATH_ORCHESTRATOR_URL }}" \
+          --client-id "${{ secrets.UIPATH_CLIENT_ID }}" \
+          --client-secret "${{ secrets.UIPATH_CLIENT_SECRET }}" \
+          --account-logical-name "${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}" \
+          --tenant-logical-name "${{ secrets.UIPATH_TENANT_NAME }}" \
+          --project-name "${{ secrets.UIPATH_TEST_MANAGER_PROJECT }}"
