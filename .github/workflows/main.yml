@@ -1,41 +1,50 @@
-name: Publish UiPath Project to Orchestrator
+name: UiPath CI Pipeline
 
 on:
   push:
     branches:
-      - main   # or your deployment branch
+      - main
 
 jobs:
-  publish:
+  uipath-ci:
     runs-on: windows-latest
 
-    env:
-      PROJECT_PATH: './TestAutomation'
-      UIPATH_ORCHESTRATOR_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
-      UIPATH_TENANT_NAME: ${{ secrets.UIPATH_TENANT_NAME }}
-      UIPATH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
-      UIPATH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
-
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: '7.0.x'
-
-      - name: Restore dotnet tools
-        run: dotnet tool restore
-
-      - name: Publish UiPath project to Orchestrator
-        shell: pwsh
+      - name: Set up UiPath CLI
         run: |
-          dotnet tool run uipcli `
-            project publish `
-            --project-path $env:PROJECT_PATH `
-            --output-path "$env:PROJECT_PATH/published" `
-            --orchestrator-url $env:UIPATH_ORCHESTRATOR_URL `
-            --tenant $env:UIPATH_TENANT_NAME `
-            --client-id $env:UIPATH_CLIENT_ID `
-            --client-secret $env:UIPATH_CLIENT_SECRET
+          Invoke-WebRequest -Uri "https://download.uipath.com/cli/uipcli-latest-win.zip" -OutFile "uipcli.zip"
+          Expand-Archive -Path "uipcli.zip" -DestinationPath "uipcli"
+          echo "$PWD\\uipcli" | Out-File -Append -Encoding ascii $env:GITHUB_PATH
+
+      - name: Authenticate with Orchestrator
+        run: |
+          uipcli login ^
+            --client-id "${{ secrets.UIPATH_CLIENT_ID }}" ^
+            --user-key "${{ secrets.UIPATH_CLIENT_SECRET }}" ^
+            --url "${{ secrets.UIPATH_ORCHESTRATOR_URL }}" ^
+            --account-name "${{ secrets.UIPATH_TENANT_NAME }}" ^
+            --tenant "${{ secrets.UIPATH_TENANT_NAME }}"
+
+      - name: Validate Project
+        run: uipcli project validate --project-path .
+
+      - name: Pack Project
+        run: uipcli project pack --project-path . --output-path output
+
+      - name: Publish Package to Orchestrator
+        run: |
+          uipcli package push ^
+            --file-path "output\\*.nupkg" ^
+            --folder "${{ secrets.UIPATH_FOLDER_PATH }}" ^
+            --force
+
+      # Optional: Deploy to a process
+      # - name: Deploy Process
+      #   run: |
+      #     uipcli deploy ^
+      #       --package-name "<your_package_name>" ^
+      #       --process "<your_process_name>" ^
+      #       --folder "${{ secrets.UIPATH_FOLDER }}"
