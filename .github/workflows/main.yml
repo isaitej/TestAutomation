@@ -1,35 +1,134 @@
-name: UiPath CI/CD
+name: CI
+on: [push]
 
-on:
-  push:
-    branches:
-      - main
-  pull_request:
+env:
+  UIPATHCLI_BASE_VERSION: "v2.0"
+  GO_VERSION: "1.24.0"
 
 jobs:
   build:
-    runs-on: windows-latest
-
+    runs-on: ubuntu-latest
+    outputs:
+      UIPATHCLI_VERSION: ${{ steps.version.outputs.UIPATHCLI_VERSION }}
+    env:
+      CGO_ENABLED: "0"
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Version
+        id: version
+        run: |
+          UIPATHCLI_VERSION=$(./version.sh "$UIPATHCLI_BASE_VERSION")
+          echo "UIPATHCLI_VERSION=$(echo $UIPATHCLI_VERSION)" >> $GITHUB_ENV
+          echo "UIPATHCLI_VERSION=$(echo $UIPATHCLI_VERSION)" >> $GITHUB_OUTPUT
+      - name: Build
+        run: go build -ldflags="-X github.com/UiPath/uipathcli/utils.Version=$UIPATHCLI_VERSION" .
+      - name: Lint
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.2
+          golangci-lint run
+      - name: Package
+        run: ./build.sh && ./package.sh
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: build/packages/
+          if-no-files-found: error
 
-    - name: Setup .NET SDK
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: '7.0.x'
+  test_linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Test
+        run: go test -coverprofile="coverage.out" -coverpkg "$(go list github.com/UiPath/uipathcli/... | grep -v 'test' | tr '\n' ',')" ./...
+      - name: Coverage
+        env:
+          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}      
+        run: |
+          go install github.com/mattn/goveralls@latest
+          goveralls -coverprofile="coverage.out" -service="github"
 
-    - name: Add UiPath NuGet source
-      run: dotnet nuget add source https://www.myget.org/F/uipath/api/v3/index.json --name UiPath
+  test_windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Test
+        run: go test ./...
 
-    - name: Install UiPath CLI tool
-      run: dotnet tool install -g UiPath.CLI --add-source https://www.myget.org/F/uipath/api/v3/index.json
+  test_macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Test
+        run: go test ./...
 
-    - name: Verify UiPath CLI installation
-      run: uipath --version
+  publish_pages:
+    needs: [build, test_linux, test_windows, test_macos]
+    permissions:
+      pages: write
+      id-token: write
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: build/packages/
+      - name: Generate commands 
+        run: |
+          tar -xzvf build/packages/uipathcli-linux-amd64.tar.gz
+          ./uipath commands show > documentation/commands.json
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'documentation'
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
 
-    # Replace this step with your actual commands, for example:
-    - name: Publish UiPath project
-      run: uipath pack --source ./YourProjectFolder --output ./artifacts
-
-    # Or any other CLI commands you need
+  release:
+    needs: [build, test_linux, test_windows, test_macos]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      UIPATHCLI_VERSION: ${{ needs.build.outputs.UIPATHCLI_VERSION }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: build/packages/
+      - name: Publish
+        run: ./publish.sh "$UIPATHCLI_VERSION"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
