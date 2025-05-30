@@ -1,42 +1,32 @@
-name: Run UiPath Tests
+name: UiPath Publish
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
+    branches:
+      - main
 
 jobs:
-  run-tests:
-    runs-on: windows-latest
+  publish:
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Install UiPath CLI
-      run: dotnet tool install -g UiPath.CLI
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
 
-    - name: Run UiPath Test Set
-      run: |
-        uipcli test run \
-          --orchestrator-url "${{ secrets.UIPATH_ORCHESTRATOR_URL }}" \
-          --client-id "${{ secrets.UIPATH_CLIENT_ID }}" \
-          --client-secret "${{ secrets.UIPATH_CLIENT_SECRET }}" \
-          --account-logical-name "${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}" \
-          --tenant-logical-name "${{ secrets.UIPATH_TENANT_NAME }}" \
-          --folder-path "${{ secrets.UIPATH_FOLDER_PATH }}" \
-          --test-set "${{ secrets.UIPATH_TESTSET_ID }}" \
-          --format JUnit \
-          --output junit-results.xml
+      - name: Install UiPath CLI
+        run: npm install -g @uipath/cli
 
-    - name: Upload test results to Test Manager
-      run: |
-        uipcli test results upload \
-          --file-path "junit-results.xml" \
-          --format "JUnit" \
-          --orchestrator-url "${{ secrets.UIPATH_ORCHESTRATOR_URL }}" \
-          --client-id "${{ secrets.UIPATH_CLIENT_ID }}" \
-          --client-secret "${{ secrets.UIPATH_CLIENT_SECRET }}" \
-          --account-logical-name "${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}" \
-          --tenant-logical-name "${{ secrets.UIPATH_TENANT_NAME }}" \
-          --project-name "${{ secrets.UIPATH_TEST_MANAGER_PROJECT }}"
+      - name: Publish UiPath project to Orchestrator
+        env:
+          UIPATH_ORCH_URL: ${{ secrets.UIPATH_ORCH_URL }}
+          UIPATH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
+          UIPATH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
+          UIPATH_TENANT_NAME: ${{ secrets.UIPATH_TENANT_NAME }}
+        run: |
+          uipath login --url $UIPATH_ORCH_URL --client-id $UIPATH_CLIENT_ID --client-secret $UIPATH_CLIENT_SECRET --tenant $UIPATH_TENANT_NAME
+          uipath publish --path ./YourUiPathProjectFolder
