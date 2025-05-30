@@ -13,32 +13,37 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # 👇 Install UiPath CLI via .NET Tool
-      - name: Install UiPath CLI
+      - name: Download and unzip UiPath CLI
+        shell: pwsh
         run: |
-          dotnet new tool-manifest
-          dotnet tool install uipcli
+          Invoke-WebRequest -Uri "https://download.uipath.com/cli/uipcli-latest-win.zip" -OutFile "uipcli.zip"
+          Expand-Archive -Path "uipcli.zip" -DestinationPath "uipcli"
+          echo "$PWD\\uipcli" | Out-File -Append -Encoding ascii $env:GITHUB_PATH
 
-      # 👇 Authenticate to Orchestrator
-      - name: Login to UiPath Orchestrator
+      - name: Authenticate to Orchestrator
+        shell: pwsh
         run: |
-          dotnet tool run uipcli login `
+          uipcli\uipcli.exe login `
             --client-id "${{ secrets.UIPATH_CLIENT_ID }}" `
-            --user-key "${{ secrets.UIPATH_CLIENT_SECRET }}" `
+            --user-key "${{ secrets.UIPATH_USER_KEY }}" `
             --url "${{ secrets.UIPATH_ORCHESTRATOR_URL }}" `
             --account-name "${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}" `
-            --tenant "${{ secrets.UIPATH_TENANT_NAME }}"
+            --tenant "${{ secrets.UIPATH_TENANT }}"
 
-      # 👇 Validate and Pack the UiPath Project
-      - name: Validate and Pack Project
+      - name: Validate UiPath Project
+        shell: pwsh
         run: |
-          dotnet tool run uipcli project validate --project-path .
-          dotnet tool run uipcli project pack --project-path . --output-path output
+          uipcli\uipcli.exe project validate --project-path .
 
-      # 👇 Publish to Orchestrator
-      - name: Push Package to Orchestrator
+      - name: Pack UiPath Project
+        shell: pwsh
         run: |
-          dotnet tool run uipcli package push `
-            --file-path "output\\*.nupkg" `
-            --folder "${{ secrets.UIPATH_FOLDER_PATH }}" `
+          uipcli\uipcli.exe project pack --project-path . --output-path output
+
+      - name: Publish Package to Orchestrator
+        shell: pwsh
+        run: |
+          uipcli\uipcli.exe package push `
+            --file-path "output\*.nupkg" `
+            --folder "${{ secrets.UIPATH_FOLDER }}" `
             --force
