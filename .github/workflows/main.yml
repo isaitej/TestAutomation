@@ -3,47 +3,33 @@ name: Publish UiPath Project to Orchestrator
 on:
   push:
     branches:
-      - main
+      - main  # or your release branch
 
 jobs:
   publish:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest  # or windows-latest if you need UiPath CLI support on Windows
 
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Download and unzip UiPath CLI
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://download.uipath.com/cli/uipcli-latest-win.zip" -OutFile "uipcli.zip"
-          Expand-Archive -Path "uipcli.zip" -DestinationPath "uipcli"
-          echo "$PWD\\uipcli" | Out-File -Append -Encoding ascii $env:GITHUB_PATH
+      - name: Set up .NET (if needed for UiPath CLI)
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '7.x' # match UiPath CLI requirements
 
-      - name: Authenticate to Orchestrator
-        shell: pwsh
+      - name: Install UiPath CLI
         run: |
-          uipcli\uipcli.exe login `
-            --client-id "${{ secrets.UIPATH_CLIENT_ID }}" `
-            --user-key "${{ secrets.UIPATH_USER_KEY }}" `
-            --url "${{ secrets.UIPATH_ORCHESTRATOR_URL }}" `
-            --account-name "${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}" `
-            --tenant "${{ secrets.UIPATH_TENANT }}"
+          dotnet tool install --global UiPath.Cli
 
-      - name: Validate UiPath Project
-        shell: pwsh
+      - name: Login to Orchestrator
         run: |
-          uipcli\uipcli.exe project validate --project-path .
+          uipath login --url ${{ secrets.UIPATH_ORCHESTRATOR_URL }} --tenant ${{ secrets.UIPATH_TENANT_NAME }} --client-id ${{ secrets.UIPATH_CLIENT_ID }} --client-secret ${{ secrets.UIPATH_CLIENT_SECRET }}
 
-      - name: Pack UiPath Project
-        shell: pwsh
+      - name: Publish project
         run: |
-          uipcli\uipcli.exe project pack --project-path . --output-path output
+          uipath pack --output ./output
+          uipath publish --path ./output/*.nupkg --folder ${{ secrets.UIPATH_FOLDER_PATH }}
 
-      - name: Publish Package to Orchestrator
-        shell: pwsh
-        run: |
-          uipcli\uipcli.exe package push `
-            --file-path "output\*.nupkg" `
-            --folder "${{ secrets.UIPATH_FOLDER }}" `
-            --force
+      - name: Logout from Orchestrator
+        run: uipath logout
