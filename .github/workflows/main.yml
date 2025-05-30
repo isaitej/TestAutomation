@@ -1,32 +1,44 @@
-name: UiPath Publish
+name: UiPath CI - Publish Project
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]  # Or your working branch
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '6.0.x'  # Compatible with UiPath CLI
 
-      - name: Install UiPath CLI
-        run: npm install -g @uipath/cli
+    - name: Install UiPath CLI from Azure Artifacts feed
+      run: |
+        dotnet tool install --global uipath.cli `
+          --version 25.4.9239.19674 `
+          --add-source "https://pkgs.dev.azure.com/uipath/Public.Feeds/_packaging/UiPath-Official/nuget/v3/index.json"
+        echo "$env:USERPROFILE\.dotnet\tools" | Out-File -Append -Encoding ascii $env:GITHUB_PATH
 
-      - name: Publish UiPath project to Orchestrator
-        env:
-          UIPATH_ORCH_URL: ${{ secrets.UIPATH_ORCH_URL }}
-          UIPATH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
-          UIPATH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
-          UIPATH_TENANT_NAME: ${{ secrets.UIPATH_TENANT_NAME }}
-        run: |
-          uipath login --url $UIPATH_ORCH_URL --client-id $UIPATH_CLIENT_ID --client-secret $UIPATH_CLIENT_SECRET --tenant $UIPATH_TENANT_NAME
-          uipath publish --path ./YourUiPathProjectFolder
+    - name: Publish to Orchestrator
+      run: |
+        uipcli publish --project-path ./YourProjectFolder `
+          --orchestrator-url $env:UIPATH_ORCHESTRATOR_URL `
+          --orchestrator-folder $env:UIPATH_FOLDER_PATH `
+          --tenant $env:UIPATH_TENANT_NAME `
+          --client-id $env:UIPATH_CLIENT_ID `
+          --client-secret $env:UIPATH_CLIENT_SECRET `
+          --account-logical-name $env:UIPATH_ACCOUNT_LOGICAL_NAME `
+          --service-logical-name $env:UIPATH_SERVICE_LOGICAL_NAME
+      env:
+        UIPATH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
+        UIPATH_FOLDER: ${{ secrets.UIPATH_FOLDER_PATH }}
+        UIPATH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
+        UIPATH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
+        UIPATH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
+        UIPATH_ACCOUNT_LOGICAL_NAME: ${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}
+        UIPATH_SERVICE_LOGICAL_NAME: ${{ secrets.UIPATH_SERVICE_LOGICAL_NAME }}
