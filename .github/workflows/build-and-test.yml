@@ -11,7 +11,7 @@ jobs:
 
     env:
       UIPATH_ORCHESTRATOR_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
-      UIPATH_TENANT: ${{ secrets.UIPATH_TENANT }}
+      UIPATH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
       UIPATH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
       UIPATH_USER_KEY: ${{ secrets.UIPATH_USER_KEY }}
       UIPATH_ACCOUNT_LOGICAL_NAME: ${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}
@@ -39,7 +39,7 @@ jobs:
             --clientId $env:UIPATH_CLIENT_ID \
             --userKey $env:UIPATH_USER_KEY \
             --accountLogicalName $env:UIPATH_ACCOUNT_LOGICAL_NAME \
-            --tenantLogicalName $env:UIPATH_TENANT \
+            --tenantLogicalName $env:UIPATH_TENANT_NAME \
             --folder $env:UIPATH_FOLDER_PATH
         shell: pwsh
 
@@ -51,6 +51,6 @@ jobs:
             --clientId $env:UIPATH_CLIENT_ID \
             --userKey $env:UIPATH_USER_KEY \
             --accountLogicalName $env:UIPATH_ACCOUNT_LOGICAL_NAME \
-            --tenantLogicalName $env:UIPATH_TENANT \
+            --tenantLogicalName $env:UIPATH_TENANT_NAME \
             --folder $env:UIPATH_FOLDER_PATH
         shell: pwsh
