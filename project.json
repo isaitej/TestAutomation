@@ -12,7 +12,7 @@
   "entitiesStores": [],
   "schemaVersion": "4.0",
   "studioVersion": "25.0.167.0",
-  "projectVersion": "1.0.202122644",
+  "projectVersion": "1.0.202389169",
   "runtimeOptions": {
     "autoDispose": false,
     "netFrameworkLazyLoading": false,
@@ -29,7 +29,8 @@
     "readyForPiP": false,
     "startsInPiP": false,
     "mustRestoreAllDependencies": true,
-    "pipType": "ChildSession"
+    "pipType": "ChildSession",
+    "robotVersion": "25.0.167"
   },
   "designOptions": {
     "projectProfile": "Developement",
@@ -47,13 +48,36 @@
         "testCaseId": "d3b6f3ad-5bc7-4bb7-b942-b99d2e5ad892",
         "testCaseType": "TestCase",
         "fileName": "TestCase.xaml"
+      },
+      {
+        "editingStatus": "Publishable",
+        "testCaseId": "488b475d-ea53-486d-80d0-899dbfe403be",
+        "testCaseType": "TestCase",
+        "executionTemplateInvokeIsolated": false,
+        "fileName": "TC001.xaml"
       }
     ],
     "saveToCloud": false
   },
   "expressionLanguage": "VisualBasic",
+  "entryPoints": [
+    {
+      "filePath": "TestCase.xaml",
+      "uniqueId": "d3b6f3ad-5bc7-4bb7-b942-b99d2e5ad892",
+      "input": [],
+      "output": []
+    },
+    {
+      "filePath": "TC001.xaml",
+      "uniqueId": "488b475d-ea53-486d-80d0-899dbfe403be",
+      "input": [],
+      "output": []
+    }
+  ],
   "isTemplate": false,
   "templateProjectData": {},
   "publishData": {},
-  "targetFramework": "Windows"
+  "targetFramework": "Windows",
+  "coverageMergeWorkflowPath": "CoverageMergeHelperWorkflow.xaml",
+  "performanceTestingBootloaderPath": "PerformanceTestingBootloaderWorkflow.cs"
 }
