@@ -1,4 +1,4 @@
-name: UiPath CI/CD Pipeline
+name: UiPath Publish & Run
 
 on:
   push:
@@ -6,49 +6,73 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
-    runs-on: windows-latest
-
-    env:
-      # UiPath Orchestrator connection info - fill these
-      UIPATH_ORCH_URL: "https://cloud.uipath.com/your-org/your-tenant"
-      UIPATH_CLIENT_ID: ${{ secrets.APP_ID }}
-      UIPATH_USER_KEY: ${{ secrets.UIPATH_CLIENT_ID }}
-      UIPATH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-      UIPATH_ACCOUNT_LOGICAL_NAME: ${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}
-      UIPATH_ORG_UNIT: "Test"
-      UIPATH_FOLDER: ${{ secrets.UIPATH_FOLDER_PATH }}
-      DOTNET_ROOT: "C:\\Program Files\\dotnet"
+  deploy-run:
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repo
+    - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Setup .NET SDK
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: '9.0.x'
-
-    - name: Install UiPath CLI
+    - name: Authenticate to UiPath Cloud
+      id: auth
       shell: pwsh
       run: |
-        dotnet tool install --global uipath.cli `
-          --add-source "https://uipath.pkgs.visualstudio.com/Public.Feeds/_packaging/UiPath-Official/nuget/v3/index.json" `
-          --version 25.4.9239.19674
+        $body = @{
+          grant_type    = "refresh_token"
+          client_id     = "${{ secrets.UIPATH_CLIENT_ID }}"
+          refresh_token = "${{ secrets.UIPATH_REFRESH_TOKEN }}"
+          scope         = "openid profile email offline_access"
+        } | ConvertTo-Json
 
-    - name: Publish UiPath project to Orchestrator
+        $response = Invoke-RestMethod -Uri "https://account.uipath.com/oauth/token" -Method POST -Body $body -ContentType "application/json"
+        echo "access_token=$($response.access_token)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Publish package to Orchestrator
       shell: pwsh
+      env:
+        ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
       run: |
-        # Add dotnet tools to PATH
-        $env:PATH += ";" + $env:USERPROFILE + "\.dotnet\tools"
+        # Adjust path to your .nupkg file
+        $packagePath ='./packages/TestAutomationProject.1.0.0.nupkg'
 
-        # Publish the .nupkg (replace path to your package)
-        uipcli project publish --package-path "./path/to/yourproject.nupkg" --folder "$env:UIPATH_FOLDER" --org-unit "$env:UIPATH_ORG_UNIT"
+        $headers = @{
+          Authorization = "Bearer $env:ACCESS_TOKEN"
+          "X-UIPATH-TenantName" = "DefaultTenent"  # if needed
+        }
 
-    - name: Start UiPath job in Orchestrator
+        # Upload package to Orchestrator
+        Invoke-RestMethod -Uri "$env:ORCH_URL/odata/Processes/UiPath.Server.Configuration.OData.UploadPackage" `
+                          -Headers $headers `
+                          -Method Post `
+                          -InFile $packagePath `
+                          -ContentType "application/octet-stream"
+
+    - name: Start UiPath job
       shell: pwsh
+      env:
+        ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
+        RELEASE_KEY: ${{ secrets.UIPATH_CLIENT_ID }}
       run: |
-        $env:PATH += ";" + $env:USERPROFILE + "\.dotnet\tools"
+        $headers = @{
+          Authorization = "Bearer $env:ACCESS_TOKEN"
+          "X-UIPATH-TenantName" = "DefaultTenent"  # if needed
+        }
 
-        # Start job (replace ProcessName with your actual process name)
-        uipcli job start --process-name "YourProcessName" --folder "$env:UIPATH_FOLDER" --org-unit "$env:UIPATH_ORG_UNIT"
+        $body = @{
+          startInfo = @{
+            ReleaseKey = $env:RELEASE_KEY
+            Strategy = "All"  # or "Specific"
+            # RobotIds = @() # If Strategy is Specific, add robot IDs here
+            # NoOfRobots = 0
+            Source = "Manual"
+          }
+        } | ConvertTo-Json -Depth 3
+
+        Invoke-RestMethod -Uri "$env:ORCH_URL/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs" `
+                          -Headers $headers `
+                          -Method Post `
+                          -Body $body `
+                          -ContentType "application/json"
+
