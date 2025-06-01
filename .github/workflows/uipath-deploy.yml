@@ -3,7 +3,7 @@ name: Build, Publish and Run UiPath Process
 on:
   push:
     branches:
-      - main   # or your main branch
+      - main
 
 jobs:
   build_publish_run:
@@ -13,43 +13,42 @@ jobs:
     - name: Checkout repo
       uses: actions/checkout@v3
 
-    - name: Setup .NET (for future usage if needed)
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: '7.0.x'
-
     - name: Build UiPath project (optional)
       run: |
-        echo "You can add UiPath Studio CLI build command here if you have"
-      # If no build command, you can skip this
+        echo "You can add UiPath Studio CLI build command here if needed"
 
-    - name: Upload package to Orchestrator
-      id: upload
+    - name: Request OAuth token via Client Credentials
+      id: get_token
       shell: pwsh
       env:
         UIPATH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
-        UIPATH_USER_KEY: ${{ secrets.UIPATH_USER_KEY }}
+        UIPATH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
+        UIPATH_SCOPE: 'OR.Jobs'
+      run: |
+        $clientId = $env:UIPATH_CLIENT_ID
+        $clientSecret = $env:UIPATH_CLIENT_SECRET -replace '\$', '`$'
+        $scope = $env:UIPATH_SCOPE
+
+        $body = "grant_type=client_credentials&client_id=$clientId&client_secret=$clientSecret&scope=$scope"
+
+        $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
+            -Method Post `
+            -Body $body `
+            -ContentType "application/x-www-form-urlencoded"
+
+        $accessToken = $response.access_token
+        Write-Host "::add-mask::$accessToken"
+        echo "##[set-output name=token;]$accessToken"
+
+    - name: Upload package to Orchestrator
+      shell: pwsh
+      env:
         UIPATH_ACCOUNT_LOGICAL_NAME: ${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}
         UIPATH_TENANT: ${{ secrets.UIPATH_TENANT }}
         UIPATH_FOLDER: ${{ secrets.UIPATH_FOLDER }}
+        ACCESS_TOKEN: ${{ steps.get_token.outputs.token }}
       run: |
-        # Step 1: Get Auth Token
-        $body = @{
-          grant_type = "refresh_token"
-          client_id = $env:UIPATH_CLIENT_ID
-          refresh_token = $env:UIPATH_USER_KEY
-          scope = "OR.Jobs"
-        } | ConvertTo-Json
-
-        $authResponse = Invoke-RestMethod -Method Post -Uri "https://account.uipath.com/oauth/token" `
-          -Headers @{ "Content-Type" = "application/json" } `
-          -Body $body
-
-        $accessToken = $authResponse.access_token
-        Write-Host "Access Token received"
-
-        # Step 2: Upload .nupkg file
-        # Make sure your package exists in the repo or build it above
+        $accessToken = $env:ACCESS_TOKEN
         $packagePath = "TestAutomationProject.1.0.202484824.nupkg"
 
         if (!(Test-Path $packagePath)) {
@@ -72,31 +71,16 @@ jobs:
 
         Write-Host "Package uploaded successfully"
 
-    - name: Start job in Orchestrator (optional)
+    - name: Start job in Orchestrator
       shell: pwsh
       env:
-        UIPATH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
-        UIPATH_USER_KEY: ${{ secrets.UIPATH_USER_KEY }}
         UIPATH_ACCOUNT_LOGICAL_NAME: ${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}
         UIPATH_TENANT: ${{ secrets.UIPATH_TENANT }}
         UIPATH_FOLDER: ${{ secrets.UIPATH_FOLDER }}
+        ACCESS_TOKEN: ${{ steps.get_token.outputs.token }}
       run: |
-        # Get Auth Token (same as above)
-        $body = @{
-          grant_type = "refresh_token"
-          client_id = $env:UIPATH_CLIENT_ID
-          refresh_token = $env:UIPATH_USER_KEY
-          scope = "OR.Jobs"
-        } | ConvertTo-Json
-
-        $authResponse = Invoke-RestMethod -Method Post -Uri "https://account.uipath.com/oauth/token" `
-          -Headers @{ "Content-Type" = "application/json" } `
-          -Body $body
-
-        $accessToken = $authResponse.access_token
-
-        # Fetch Process key (ProcessName should match your published process)
-        $processName = "TestAutomationProject" 
+        $accessToken = $env:ACCESS_TOKEN
+        $processName = "TestAutomationProject"
 
         $processesUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Processes?\$filter=Name eq '$processName'"
 
@@ -109,20 +93,13 @@ jobs:
 
         $processKey = $processesResponse.value[0].Key
 
-        # Start Job
         $startJobUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs"
 
         $jobBody = @{
           startInfo = @{
             ReleaseKey = $processKey
-            Strategy = "All" # or "Specific" or "JobsCount"
-            # RobotIds = @() # Optional
-            # NoOfRobots = 0 # Optional
-            # InputArguments = "{}" # Optional JSON string
-            # Source = "Manual" # Optional
+            Strategy = "All"
           }
         } | ConvertTo-Json -Depth 10
 
-        Invoke-RestMethod -Uri $startJobUrl -Headers @{ Authorization = "Bearer $accessToken" } -Method Post -Body $jobBody -ContentType "application/json"
-
-        Write-Host "Job started successfully"
+        Invoke-RestMethod -Uri $startJobUrl -Headers @{ Authorization = "Bearer $accessToken" } -Method Post -Body $jobBody -ContentType "applicati
