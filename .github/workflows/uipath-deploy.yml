@@ -1,69 +1,64 @@
-name: Build, Publish, and Upload UiPath Process
+name: Build, Publish, and Run UiPath Process
 
 on:
   push:
     branches:
-      - main  # or your main branch
+      - main   # or your main branch
 
 jobs:
-  build_publish_upload:
+  build_publish_run:
     runs-on: windows-latest
 
     steps:
-    # Step 1: Checkout repo
-    - name: Checkout repository
-      uses: actions/checkout@v2
+    - name: Checkout repo
+      uses: actions/checkout@v3
 
-    # Step 2: Setup .NET (optional, if needed for other tasks)
-    - name: Setup .NET
+    - name: Setup .NET (for future usage if needed)
       uses: actions/setup-dotnet@v3
       with:
         dotnet-version: '7.0.x'
 
-    # Step 3: Build the UiPath Project to generate .nupkg file
     - name: Build UiPath package
       shell: pwsh
       run: |
         # Define project path and output folder
-        $projectPath = "$PWD\TestAutomationProject"  # path to your UiPath project folder
-        $outputPath = "$PWD"                         # output to current folder
-
+        $projectPath = "C:\Users\Saiteja.Indarapu\OneDrive - Elemica, Inc\Desktop\TestAutomationProject"  # path to your UiPath project folder
+        $outputPath = "C:\Users\Saiteja.Indarapu\OneDrive - Elemica, Inc\Desktop\TestAutomationProject"    # output to the same folder
+        
         # Pack the project using UiRobot.exe (adjust path if needed)
         & "C:\Program Files\UiPath\Studio\UiRobot.exe" pack --source $projectPath --output $outputPath --no-versioning
-
+        
         # List the generated nupkg files
         Get-ChildItem -Path $outputPath -Filter *.nupkg
 
-    # Step 4: Upload package to Orchestrator
     - name: Upload package to Orchestrator
+      id: upload
       shell: pwsh
       env:
-        UIPATH_CLIENT_ID: "21a6955b-2fbe-4cd4-8d71-4124dff739ce"
-        UIPATH_CLIENT_SECRET: "1ljhMu`$Db!6boY6W"  # Escape `$` for PowerShell
-        UIPATH_SCOPE: "OR.Jobs"
-        UIPATH_ACCOUNT_LOGICAL_NAME: "testbfsvyha"
-        UIPATH_TENANT: "DefaultTenant"
-        UIPATH_FOLDER: "Shared"
+        UIPATH_CLIENT_ID: "21a6955b-2fbe-4cd4-8d71-4124dff739ce"  # Your real Client ID
+        UIPATH_CLIENT_SECRET: "1ljhMu`$Db!6boY6W"  # Your real Client Secret (escaped $ for PowerShell)
+        UIPATH_ACCOUNT_LOGICAL_NAME: "testbfsvyha"  # Your account logical name
+        UIPATH_TENANT: "DefaultTenant"  # Your tenant name
+        UIPATH_FOLDER: "Shared"  # Your folder in Orchestrator
       run: |
-        # Step 1: Get Auth Token using client credentials
+        # Step 1: Get Auth Token
         $clientId = $env:UIPATH_CLIENT_ID.Trim()
         $clientSecret = $env:UIPATH_CLIENT_SECRET -replace '\$', '`$'
-        $scope = $env:UIPATH_SCOPE
-
+        $scope = "OR.Jobs"
+        
         $body = "grant_type=client_credentials&client_id=$clientId&client_secret=$clientSecret&scope=$scope"
-
-        # Get access token
+        
         $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
             -Method Post `
             -Body $body `
             -ContentType "application/x-www-form-urlencoded"
-
+        
         $accessToken = $response.access_token
         Write-Host "::add-mask::$accessToken"
         echo "token=$accessToken" >> $env:GITHUB_OUTPUT
-
-        # Step 2: Upload the .nupkg file to Orchestrator
-        $packagePath = "TestAutomationProject.1.0.202484824.nupkg"
+        
+        # Step 2: Upload .nupkg file
+        $packagePath = "C:\Users\Saiteja.Indarapu\OneDrive - Elemica, Inc\Desktop\TestAutomationProject\TestAutomationProject.1.0.202484824.nupkg"
 
         if (!(Test-Path $packagePath)) {
           Write-Error "Package not found at path: $packagePath"
@@ -85,33 +80,31 @@ jobs:
 
         Write-Host "Package uploaded successfully"
 
-    # Step 5: Optional - Start job in Orchestrator
-    - name: Start Job in Orchestrator (optional)
+    - name: Start job in Orchestrator (optional)
       shell: pwsh
       env:
-        UIPATH_CLIENT_ID: "21a6955b-2fbe-4cd4-8d71-4124dff739ce"
-        UIPATH_CLIENT_SECRET: "1ljhMu`$Db!6boY6W"  # Escape `$` for PowerShell
-        UIPATH_SCOPE: "OR.Jobs"
-        UIPATH_ACCOUNT_LOGICAL_NAME: "testbfsvyha"
-        UIPATH_TENANT: "DefaultTenant"
-        UIPATH_FOLDER: "Shared"
+        UIPATH_CLIENT_ID: "21a6955b-2fbe-4cd4-8d71-4124dff739ce"  # Your real Client ID
+        UIPATH_CLIENT_SECRET: "1ljhMu`$Db!6boY6W"  # Your real Client Secret (escaped $ for PowerShell)
+        UIPATH_ACCOUNT_LOGICAL_NAME: "testbfsvyha"  # Your account logical name
+        UIPATH_TENANT: "DefaultTenant"  # Your tenant name
+        UIPATH_FOLDER: "Shared"  # Your folder in Orchestrator
       run: |
-        # Step 1: Get Auth Token (same as above)
-        $clientId = $env:UIPATH_CLIENT_ID.Trim()
-        $clientSecret = $env:UIPATH_CLIENT_SECRET -replace '\$', '`$'
-        $scope = $env:UIPATH_SCOPE
+        # Get Auth Token (same as above)
+        $body = @{
+          grant_type = "refresh_token"
+          client_id = $env:UIPATH_CLIENT_ID
+          refresh_token = $env:UIPATH_USER_KEY
+          scope = "OR.Jobs"
+        } | ConvertTo-Json
 
-        $body = "grant_type=client_credentials&client_id=$clientId&client_secret=$clientSecret&scope=$scope"
+        $authResponse = Invoke-RestMethod -Method Post -Uri "https://account.uipath.com/oauth/token" `
+          -Headers @{ "Content-Type" = "application/json" } `
+          -Body $body
 
-        $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
-            -Method Post `
-            -Body $body `
-            -ContentType "application/x-www-form-urlencoded"
-
-        $accessToken = $response.access_token
+        $accessToken = $authResponse.access_token
 
         # Fetch Process key (ProcessName should match your published process)
-        $processName = "TestAutomationProject"
+        $processName = "TestAutomationProject" 
 
         $processesUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Processes?\$filter=Name eq '$processName'"
 
