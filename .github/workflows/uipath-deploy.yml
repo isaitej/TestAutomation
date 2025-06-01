@@ -1,36 +1,63 @@
-name: UiPath CI/CD
+name: UiPath CI-CD Pipeline
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  uipath-deploy:
-    runs-on: ubuntu-latest
+  publish-and-run-uipath:
+    runs-on: windows-latest
+
+    env:
+      UIPATH_ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
+      UIPATH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
+      UIPATH_USER_KEY: ${{ secrets.UIPATH_USER_KEY }}
+      UIPATH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
+      UIPATH_ACCOUNT_LOGICAL_NAME: ${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}
+      UIPATH_FOLDER: ${{ secrets.UIPATH_FOLDER_PATH }}
+      UIPATH_PACKAGE_PATH: './packages/TestAutomationProject.1.0.0.nupkg'
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
+    - name: Install dependencies (optional)
+      run: dotnet --version
 
-      - name: Install UiPath CLI
-        run: npm install -g @uipath/cli
+    - name: Publish UiPath Package via API
+      run: |
+        $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${{ env.UIPATH_CLIENT_ID }}:${{ env.UIPATH_USER_KEY }}"))
+        $body = @{
+          folderPath = "${{ env.UIPATH_FOLDER_PATH }}"
+          overwriteExistingPackage = $true
+        }
+        Invoke-RestMethod -Uri "${{ env.UIPATH_ORCHESTRATOR_URL }}/odata/Processes/UiPath.Server.Configuration.OData.UploadPackage" `
+                          -Method Post `
+                          -Headers @{Authorization = "Basic $base64AuthInfo"} `
+                          -Form @{ file = Get-Item "${{ env.UIPATH_PACKAGE_PATH }}" }
 
-      - name: Create config file
-        run: |
-          echo '${{ secrets.UIPATH_CONFIG }}' > uipath.config.json
+    - name: Start Job via API
+      run: |
+        $authBody = @{
+          grant_type = "refresh_token"
+          client_id = "${{ env.UIPATH_CLIENT_ID }}"
+          refresh_token = "${{ env.UIPATH_USER_KEY }}"
+        }
+        $tokenResponse = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" -Method Post -Body $authBody
+        $accessToken = $tokenResponse.access_token
 
-      - name: Pack UiPath project
-        run: uipath pack path/to/project -o output
+        $jobBody = @{
+          startInfo = @{
+            ReleaseKey = "<RELEASE_KEY>"  # Replace with your process release key
+            Strategy = "ModernJobs"
+            RuntimeType = "Unattended"
+            RobotIds = @()
+            JobsCount = 1
+          }
+        } | ConvertTo-Json -Depth 10
 
-      - name: Deploy package to Orchestrator
-        run: uipath deploy output/*.nupkg
-
-      # Optional: Run a job or test case
-      # - name: Run a job
-      #   run: uipath run --releaseKey <your_release_key>
+        Invoke-RestMethod -Uri "${{ env.UIPATH_ORCHESTRATOR_URL }}/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs" `
+                          -Method Post `
+                          -Headers @{Authorization = "Bearer $accessToken"; "Content-Type" = "application/json"} `
+                          -Body $jobBody
