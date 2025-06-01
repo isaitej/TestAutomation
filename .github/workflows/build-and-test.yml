@@ -1,4 +1,4 @@
-name: UiPath Deploy and Run
+name: UiPath CI/CD Pipeline
 
 on:
   push:
@@ -6,51 +6,56 @@ on:
       - main
 
 jobs:
-  deploy-and-run:
+  uipath-deploy-run:
     runs-on: windows-latest
 
     env:
-      UIPATH_ORCHESTRATOR_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
-      UIPATH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
+      UIPATH_ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
       UIPATH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
       UIPATH_USER_KEY: ${{ secrets.UIPATH_USER_KEY }}
+      UIPATH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
+      UIPATH_FOLDER: ${{ secrets.UIPATH_FOLDER_PATH }}
       UIPATH_ACCOUNT_LOGICAL_NAME: ${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}
-      UIPATH_FOLDER_LOGICAL_NAME: ${{ secrets.UIPATH_FOLDER_LOGICAL_NAME }}
+      UIPATH_ORG_UNIT: ${{ secrets.UIPATH_FOLDER_PATH }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install .NET CLI (if needed)
-        uses: actions/setup-dotnet@v3
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '7.x'
+          dotnet-version: '6.0.x'
 
       - name: Install UiPath CLI
         run: |
-          dotnet tool install --global uipath.cli --add-source "https://uipath.visualstudio.com/Public.Feeds/_packaging/UiPath-Official/nuget/v3/index.json" --version 25.4.9239.19674
-        shell: pwsh
+          dotnet tool install --global uipath.cli \
+            --add-source "https://uipath.pkgs.visualstudio.com/Public.Feeds/_packaging/UiPath-Official/nuget/v3/index.json" \
+            --version 25.4.9239.19674
 
-      - name: Publish project to Orchestrator
+      - name: Pack project
         run: |
-          uipcli project push \
-            --path "." \
-            --url $env:UIPATH_ORCHESTRATOR_URL \
-            --clientId $env:UIPATH_CLIENT_ID \
-            --userKey $env:UIPATH_USER_KEY \
-            --accountLogicalName $env:UIPATH_ACCOUNT_LOGICAL_NAME \
-            --tenantLogicalName $env:UIPATH_TENANT_NAME \
-            --folder $env:UIPATH_FOLDER_PATH
-        shell: pwsh
+          uipcli pack \
+            --project-path "./" \
+            --output-folder "./output"
 
-      - name: Trigger job in Orchestrator
+      - name: Authenticate with Orchestrator
         run: |
-          uipcli job start \
-            --process-name "Your_Process_Name_Here" \
-            --url $env:UIPATH_ORCHESTRATOR_URL \
-            --clientId $env:UIPATH_CLIENT_ID \
-            --userKey $env:UIPATH_USER_KEY \
-            --accountLogicalName $env:UIPATH_ACCOUNT_LOGICAL_NAME \
-            --tenantLogicalName $env:UIPATH_TENANT_NAME \
-            --folder $env:UIPATH_FOLDER_PATH
-        shell: pwsh
+          uipcli login \
+            --url "%UIPATH_ORCHESTRATOR_URL%" \
+            --client-id "%UIPATH_CLIENT_ID%" \
+            --user-key "%UIPATH_USER_KEY%" \
+            --account-name "%UIPATH_ACCOUNT_LOGICAL_NAME%" \
+            --tenant "%UIPATH_TENANT_NAME%"
+
+      - name: Publish to Orchestrator
+        run: |
+          uipcli publish \
+            --package-path "./output/*.nupkg" \
+            --folder "%UIPATH_FOLDER_PATH%"
+
+      - name: Run Job
+        run: |
+          uipcli run \
+            --release-name "Your_Process_Release_Name" \
+            --folder "%UIPATH_FOLDER_PATH%"
