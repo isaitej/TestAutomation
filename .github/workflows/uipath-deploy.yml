@@ -15,7 +15,7 @@ jobs:
 
     - name: Build UiPath project (optional)
       run: |
-        echo "You can add UiPath Studio CLI build command here if needed"
+        echo "Add UiPath Studio CLI build command here if needed"
 
     - name: Request OAuth token via Client Credentials
       id: get_token
@@ -25,7 +25,7 @@ jobs:
         UIPATH_CLIENT_SECRET: ${{ secrets.UIPATH_CLIENT_SECRET }}
         UIPATH_SCOPE: 'OR.Jobs'
       run: |
-        $clientId = $env:UIPATH_CLIENT_ID
+        $clientId = $env:UIPATH_CLIENT_ID.Trim()
         $clientSecret = $env:UIPATH_CLIENT_SECRET -replace '\$', '`$'
         $scope = $env:UIPATH_SCOPE
 
@@ -38,15 +38,15 @@ jobs:
 
         $accessToken = $response.access_token
         Write-Host "::add-mask::$accessToken"
-        echo "##[set-output name=token;]$accessToken"
+        echo "token=$accessToken" >> $env:GITHUB_OUTPUT
 
     - name: Upload package to Orchestrator
       shell: pwsh
       env:
+        ACCESS_TOKEN: ${{ steps.get_token.outputs.token }}
         UIPATH_ACCOUNT_LOGICAL_NAME: ${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}
         UIPATH_TENANT: ${{ secrets.UIPATH_TENANT }}
         UIPATH_FOLDER: ${{ secrets.UIPATH_FOLDER }}
-        ACCESS_TOKEN: ${{ steps.get_token.outputs.token }}
       run: |
         $accessToken = $env:ACCESS_TOKEN
         $packagePath = "TestAutomationProject.1.0.202484824.nupkg"
@@ -74,10 +74,10 @@ jobs:
     - name: Start job in Orchestrator
       shell: pwsh
       env:
+        ACCESS_TOKEN: ${{ steps.get_token.outputs.token }}
         UIPATH_ACCOUNT_LOGICAL_NAME: ${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}
         UIPATH_TENANT: ${{ secrets.UIPATH_TENANT }}
         UIPATH_FOLDER: ${{ secrets.UIPATH_FOLDER }}
-        ACCESS_TOKEN: ${{ steps.get_token.outputs.token }}
       run: |
         $accessToken = $env:ACCESS_TOKEN
         $processName = "TestAutomationProject"
@@ -102,4 +102,10 @@ jobs:
           }
         } | ConvertTo-Json -Depth 10
 
-        Invoke-RestMethod -Uri $startJobUrl -Headers @{ Authorization = "Bearer $accessToken" } -Method Post -Body $jobBody -ContentType "applicati
+        Invoke-RestMethod -Uri $startJobUrl `
+          -Headers @{ Authorization = "Bearer $accessToken" } `
+          -Method Post `
+          -Body $jobBody `
+          -ContentType "application/json"
+
+        Write-Host "Job started successfully"
