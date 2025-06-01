@@ -3,100 +3,102 @@ name: Build, Publish and Run UiPath Process
 on:
   push:
     branches:
-      - main
+      - main  # change as needed
 
 jobs:
   build_publish_run:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Build UiPath project (optional)
-      run: |
-        echo "Add UiPath Studio CLI build commands here if needed"
+      - name: Setup .NET (optional)
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '7.0.x'
 
-    - name: Request OAuth token via Client Credentials
-      shell: pwsh
-      id: get_token
-      run: |
-        $clientId = "21a6955b-2fbe-4cd4-8d71-4124dff739ce"
-        $clientSecret = "1ljhMu`$Db!6boY6W"  # Escaped $ with backtick
-        $scope = "OR.Jobs"
+      - name: Build UiPath project (optional)
+        run: |
+          echo "Add UiPath Studio CLI build commands here if applicable."
 
-        # Create the form-urlencoded body
-        $body = "grant_type=client_credentials&client_id=$clientId&client_secret=$clientSecret&scope=$scope"
+      - name: Get UiPath OAuth Token
+        id: get_token
+        shell: pwsh
+        run: |
+          $clientId = "21a6955b-2fbe-4cd4-8d71-4124dff739ce".Trim()
+          $clientSecret = "1ljhMu`$Db!6boY6W"  # Note the backtick before $ to escape in PowerShell
+          $scope = "OR.Jobs"
 
-        # Request token
-        $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
-            -Method Post `
-            -Body $body `
-            -ContentType "application/x-www-form-urlencoded"
+          $body = "grant_type=client_credentials&client_id=$clientId&client_secret=$clientSecret&scope=$scope"
 
-        # Output token and save to GitHub Actions output
-        Write-Host "::add-mask::$($response.access_token)"
-        echo "token=$($response.access_token)" >> $env:GITHUB_OUTPUT
+          $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
+              -Method Post `
+              -Body $body `
+              -ContentType "application/x-www-form-urlencoded"
 
-    - name: Upload package to Orchestrator
-      shell: pwsh
-      env:
-        ACCESS_TOKEN: ${{ steps.get_token.outputs.token }}
-        UIPATH_ACCOUNT_LOGICAL_NAME: ${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}
-        UIPATH_TENANT: ${{ secrets.UIPATH_TENANT }}
-        UIPATH_FOLDER: ${{ secrets.UIPATH_FOLDER }}
-      run: |
-        $packagePath = "TestAutomationProject.1.0.202484824.nupkg"
-        if (!(Test-Path $packagePath)) {
-          Write-Error "Package not found: $packagePath"
-          exit 1
-        }
+          $accessToken = $response.access_token
+          Write-Host "::add-mask::$accessToken"
+          echo "token=$accessToken" >> $env:GITHUB_OUTPUT
 
-        $uploadUrl = "https://cloud.uipath.com/$env:UIPATH_ACCOUNT_LOGICAL_NAME/$env:UIPATH_TENANT/odata/Processes/UiPath.Server.Configuration.OData.UploadPackage"
-
-        $form = @{
-          file = Get-Item $packagePath
-          folderPath = $env:UIPATH_FOLDER
-          overwriteExistingPackage = $true
-        }
-
-        Invoke-RestMethod -Uri $uploadUrl `
-          -Headers @{ Authorization = "Bearer $env:ACCESS_TOKEN" } `
-          -Method Post `
-          -Form $form
-
-        Write-Host "Package uploaded successfully"
-
-    - name: Start job in Orchestrator
-      shell: pwsh
-      env:
-        ACCESS_TOKEN: ${{ steps.get_token.outputs.token }}
-        UIPATH_ACCOUNT_LOGICAL_NAME: ${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}
-        UIPATH_TENANT: ${{ secrets.UIPATH_TENANT }}
-        UIPATH_FOLDER: ${{ secrets.UIPATH_FOLDER }}
-      run: |
-        $processName = "TestAutomationProject"
-
-        $processesUrl = "https://cloud.uipath.com/$env:UIPATH_ACCOUNT_LOGICAL_NAME/$env:UIPATH_TENANT/odata/Processes?\$filter=Name eq '$processName'"
-
-        $processesResponse = Invoke-RestMethod -Uri $processesUrl -Headers @{ Authorization = "Bearer $env:ACCESS_TOKEN" }
-
-        if ($processesResponse.value.Count -eq 0) {
-          Write-Error "Process '$processName' not found"
-          exit 1
-        }
-
-        $processKey = $processesResponse.value[0].Key
-
-        $startJobUrl = "https://cloud.uipath.com/$env:UIPATH_ACCOUNT_LOGICAL_NAME/$env:UIPATH_TENANT/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs"
-
-        $jobBody = @{
-          startInfo = @{
-            ReleaseKey = $processKey
-            Strategy = "All"
+      - name: Upload UiPath Package
+        shell: pwsh
+        env:
+          ACCESS_TOKEN: ${{ steps.get_token.outputs.token }}
+          UIPATH_ACCOUNT_LOGICAL_NAME: "testbfsvyha"   # Replace with your actual account logical name
+          UIPATH_TENANT: "DefaultTenant"                               # Replace with your actual tenant name
+          UIPATH_FOLDER: "Shared"                               # Replace with your folder or leave empty string
+        run: |
+          $packagePath = "TestAutomationProject.1.0.202484824.nupkg"
+          if (!(Test-Path $packagePath)) {
+            Write-Error "Package not found: $packagePath"
+            exit 1
           }
-        } | ConvertTo-Json -Depth 10
 
-        Invoke-RestMethod -Uri $startJobUrl -Headers @{ Authorization = "Bearer $env:ACCESS_TOKEN" } -Method Post -Body $jobBody -ContentType "application/json"
+          $uploadUrl = "https://cloud.uipath.com/$env:UIPATH_ACCOUNT_LOGICAL_NAME/$env:UIPATH_TENANT/odata/Processes/UiPath.Server.Configuration.OData.UploadPackage"
 
-        Write-Host "Job started successfully"
+          $form = @{
+            file = Get-Item $packagePath
+            folderPath = $env:UIPATH_FOLDER
+            overwriteExistingPackage = $true
+          }
+
+          Invoke-RestMethod -Uri $uploadUrl `
+            -Headers @{ Authorization = "Bearer $env:ACCESS_TOKEN" } `
+            -Method Post `
+            -Form $form
+
+          Write-Host "Package uploaded successfully"
+
+      - name: Start UiPath Job (optional)
+        shell: pwsh
+        env:
+          ACCESS_TOKEN: ${{ steps.get_token.outputs.token }}
+          UIPATH_ACCOUNT_LOGICAL_NAME: "testbfsvyha"   # Replace
+          UIPATH_TENANT: "DefaultTenant"                               # Replace
+        run: |
+          $processName = "TestAutomationProject"
+
+          $processesUrl = "https://cloud.uipath.com/$env:UIPATH_ACCOUNT_LOGICAL_NAME/$env:UIPATH_TENANT/odata/Processes?\$filter=Name eq '$processName'"
+
+          $processesResponse = Invoke-RestMethod -Uri $processesUrl -Headers @{ Authorization = "Bearer $env:ACCESS_TOKEN" }
+
+          if ($processesResponse.value.Count -eq 0) {
+            Write-Error "Process '$processName' not found in Orchestrator"
+            exit 1
+          }
+
+          $processKey = $processesResponse.value[0].Key
+
+          $startJobUrl = "https://cloud.uipath.com/$env:UIPATH_ACCOUNT_LOGICAL_NAME/$env:UIPATH_TENANT/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs"
+
+          $jobBody = @{
+            startInfo = @{
+              ReleaseKey = $processKey
+              Strategy = "All"
+            }
+          } | ConvertTo-Json -Depth 10
+
+          Invoke-RestMethod -Uri $startJobUrl -Headers @{ Authorization = "Bearer $env:ACCESS_TOKEN" } -Method Post -Body $jobBody -ContentType "application/json"
+
+          Write-Host "Job started successfully"
