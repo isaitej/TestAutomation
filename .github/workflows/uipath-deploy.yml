@@ -1,0 +1,36 @@
+name: UiPath CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  uipath-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install UiPath CLI
+        run: npm install -g @uipath/cli
+
+      - name: Create config file
+        run: |
+          echo '${{ secrets.UIPATH_CONFIG }}' > uipath.config.json
+
+      - name: Pack UiPath project
+        run: uipath pack path/to/project -o output
+
+      - name: Deploy package to Orchestrator
+        run: uipath deploy output/*.nupkg
+
+      # Optional: Run a job or test case
+      # - name: Run a job
+      #   run: uipath run --releaseKey <your_release_key>
