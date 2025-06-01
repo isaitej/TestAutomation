@@ -1,0 +1,32 @@
+name: Build UiPath Project
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build_nupkg:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up UiPath environment (self-hosted runner needs UiPath Robot/Studio)
+        run: |
+          # If you are using a self-hosted runner, make sure UiPath Robot/Studio is installed
+          # You might need to install UiRobot.exe or other UiPath dependencies on the runner.
+
+      - name: Build the UiPath .nupkg file
+        shell: pwsh
+        run: |
+          # Define the path to your project and output folder
+          $projectPath = "$PWD\TestAutomationProject"   # Modify the path as needed
+          $outputPath = "$PWD"                          # Modify the output folder if needed
+
+          # Use UiRobot.exe to create the .nupkg file
+          & "C:\Program Files\UiPath\Studio\UiRobot.exe" pack --source $projectPath --output $outputPath --no-versioning
+
+          # List the generated .nupkg files
+          Get-ChildItem -Path $outputPath -Filter *.nupkg
