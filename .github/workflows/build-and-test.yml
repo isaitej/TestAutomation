@@ -6,56 +6,49 @@ on:
       - main
 
 jobs:
-  uipath-deploy-run:
+  build-and-deploy:
     runs-on: windows-latest
 
     env:
-      UIPATH_ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
-      UIPATH_CLIENT_ID: ${{ secrets.UIPATH_CLIENT_ID }}
-      UIPATH_USER_KEY: ${{ secrets.UIPATH_USER_KEY }}
+      # UiPath Orchestrator connection info - fill these
+      UIPATH_ORCH_URL: "https://cloud.uipath.com/your-org/your-tenant"
+      UIPATH_CLIENT_ID: ${{ secrets.APP_ID }}
+      UIPATH_USER_KEY: ${{ secrets.UIPATH_CLIENT_ID }}
       UIPATH_TENANT: ${{ secrets.UIPATH_TENANT_NAME }}
-      UIPATH_FOLDER: ${{ secrets.UIPATH_FOLDER_PATH }}
       UIPATH_ACCOUNT_LOGICAL_NAME: ${{ secrets.UIPATH_ACCOUNT_LOGICAL_NAME }}
-      UIPATH_ORG_UNIT: ${{ secrets.UIPATH_FOLDER_PATH }}
+      UIPATH_ORG_UNIT: "Test"
+      UIPATH_FOLDER: ${{ secrets.UIPATH_FOLDER_PATH }}
+      DOTNET_ROOT: "C:\\Program Files\\dotnet"
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout repo
+      uses: actions/checkout@v3
 
-      - name: Install .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '6.0.x'
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '9.0.x'
 
-      - name: Install UiPath CLI
-        run: |
-          dotnet tool install --global uipath.cli \
-            --add-source "https://uipath.pkgs.visualstudio.com/Public.Feeds/_packaging/UiPath-Official/nuget/v3/index.json" \
-            --version 25.4.9239.19674
+    - name: Install UiPath CLI
+      shell: pwsh
+      run: |
+        dotnet tool install --global uipath.cli `
+          --add-source "https://uipath.pkgs.visualstudio.com/Public.Feeds/_packaging/UiPath-Official/nuget/v3/index.json" `
+          --version 25.4.9239.19674
 
-      - name: Pack project
-        run: |
-          uipcli pack \
-            --project-path "./" \
-            --output-folder "./output"
+    - name: Publish UiPath project to Orchestrator
+      shell: pwsh
+      run: |
+        # Add dotnet tools to PATH
+        $env:PATH += ";" + $env:USERPROFILE + "\.dotnet\tools"
 
-      - name: Authenticate with Orchestrator
-        run: |
-          uipcli login \
-            --url "%UIPATH_ORCHESTRATOR_URL%" \
-            --client-id "%UIPATH_CLIENT_ID%" \
-            --user-key "%UIPATH_USER_KEY%" \
-            --account-name "%UIPATH_ACCOUNT_LOGICAL_NAME%" \
-            --tenant "%UIPATH_TENANT_NAME%"
+        # Publish the .nupkg (replace path to your package)
+        uipcli project publish --package-path "./path/to/yourproject.nupkg" --folder "$env:UIPATH_FOLDER" --org-unit "$env:UIPATH_ORG_UNIT"
 
-      - name: Publish to Orchestrator
-        run: |
-          uipcli publish \
-            --package-path "./output/*.nupkg" \
-            --folder "%UIPATH_FOLDER_PATH%"
+    - name: Start UiPath job in Orchestrator
+      shell: pwsh
+      run: |
+        $env:PATH += ";" + $env:USERPROFILE + "\.dotnet\tools"
 
-      - name: Run Job
-        run: |
-          uipcli run \
-            --release-name "Your_Process_Release_Name" \
-            --folder "%UIPATH_FOLDER_PATH%"
+        # Start job (replace ProcessName with your actual process name)
+        uipcli job start --process-name "YourProcessName" --folder "$env:UIPATH_FOLDER" --org-unit "$env:UIPATH_ORG_UNIT"
