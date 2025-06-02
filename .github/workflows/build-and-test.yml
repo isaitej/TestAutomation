@@ -1,0 +1,78 @@
+name: UiPath Publish & Run
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-run:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Authenticate to UiPath Cloud
+      id: auth
+      shell: pwsh
+      run: |
+        $body = @{
+          grant_type    = "refresh_token"
+          client_id     = "${{ secrets.UIPATH_CLIENT_ID }}"
+          refresh_token = "${{ secrets.UIPATH_REFRESH_TOKEN }}"
+          scope         = "openid profile email offline_access"
+        } | ConvertTo-Json
+
+        $response = Invoke-RestMethod -Uri "https://account.uipath.com/oauth/token" -Method POST -Body $body -ContentType "application/json"
+        echo "access_token=$($response.access_token)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8
+
+    - name: Publish package to Orchestrator
+      shell: pwsh
+      env:
+        ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
+      run: |
+        # Adjust path to your .nupkg file
+        $packagePath ='./packages/TestAutomationProject.1.0.0.nupkg'
+
+        $headers = @{
+          Authorization = "Bearer $env:ACCESS_TOKEN"
+          "X-UIPATH-TenantName" = "DefaultTenent"  # if needed
+        }
+
+        # Upload package to Orchestrator
+        Invoke-RestMethod -Uri "$env:ORCH_URL/odata/Processes/UiPath.Server.Configuration.OData.UploadPackage" `
+                          -Headers $headers `
+                          -Method Post `
+                          -InFile $packagePath `
+                          -ContentType "application/octet-stream"
+
+    - name: Start UiPath job
+      shell: pwsh
+      env:
+        ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+        ORCH_URL: ${{ secrets.UIPATH_ORCHESTRATOR_URL }}
+        RELEASE_KEY: ${{ secrets.UIPATH_CLIENT_ID }}
+      run: |
+        $headers = @{
+          Authorization = "Bearer $env:ACCESS_TOKEN"
+          "X-UIPATH-TenantName" = "DefaultTenent"  # if needed
+        }
+
+        $body = @{
+          startInfo = @{
+            ReleaseKey = $env:RELEASE_KEY
+            Strategy = "All"  # or "Specific"
+            # RobotIds = @() # If Strategy is Specific, add robot IDs here
+            # NoOfRobots = 0
+            Source = "Manual"
+          }
+        } | ConvertTo-Json -Depth 3
+
+        Invoke-RestMethod -Uri "$env:ORCH_URL/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs" `
+                          -Headers $headers `
+                          -Method Post `
+                          -Body $body `
+                          -ContentType "application/json"
+
