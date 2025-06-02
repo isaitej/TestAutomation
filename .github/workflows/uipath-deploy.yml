@@ -1,93 +1,55 @@
-name: Build, Publish, and Run UiPath Process
+name: UiPath Automation Workflow
 
 on:
-  push:
-    branches:
-      - main  # Adjust as needed
+  workflow_dispatch:
+
+env:
+  UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
+  UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
+  UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
+  UIPATH_TENANT: DefaultTenant
+  UIPATH_FOLDER: Shared
+  UIPATH_PROJECT_NAME: TestAutomationProject
+  DOTNET_ROOT: C:\Program Files\dotnet
 
 jobs:
-  build_publish_run:
+  uipath-process:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout code
+    - name: Checkout repository
       uses: actions/checkout@v3
 
     - name: Pack UiPath Project using UiRobot.exe
       shell: pwsh
       run: |
-        $projectJson = "C:\Users\Saiteja.Indarapu\OneDrive - Elemica, Inc\Desktop\TestAutomationProject\project.json"
-        $outputPath = "C:\Users\Saiteja.Indarapu\OneDrive - Elemica, Inc\Desktop\TestAutomationProject\output"
+        $projectJson = "$env:GITHUB_WORKSPACE\project.json"
+        $outputFolder = "$env:GITHUB_WORKSPACE\output"
+        New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
+
         & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" pack `
-          "$projectJson" -o "$outputPath"
-        Get-ChildItem "$outputPath" -Filter *.nupkg
+          "$projectJson" `
+          --output "$outputFolder"
 
-    - name: Upload package to Orchestrator
-      shell: pwsh
-      env:
-        UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
-        UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
-        UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
-        UIPATH_TENANT: DefaultTenant
-        UIPATH_FOLDER: Shared
-        UIPATH_PROJECT_NAME: TestAutomationProject
+    - name: Upload Packed .nupkg as Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: uipath-nuget-package
+        path: output\*.nupkg
+
+    - name: Publish Package to Orchestrator
       run: |
-        $packagePath = "C:\Users\Saiteja.Indarapu\OneDrive - Elemica, Inc\Desktop\TestAutomationProject\output\TestAutomationProject.1.0.0.nupkg"
-        if (!(Test-Path $packagePath)) {
-          Write-Error "Package not found: $packagePath"
-          exit 1
-        }
+        $packagePath = Get-ChildItem "$env:GITHUB_WORKSPACE\output\*.nupkg" | Select-Object -First 1
+        & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" upload `
+          --file "$($packagePath.FullName)" `
+          --clientId $env:UIPATH_CLIENT_ID `
+          --clientSecret $env:UIPATH_CLIENT_SECRET `
+          --accountLogicalName $env:UIPATH_ACCOUNT_LOGICAL_NAME `
+          --tenantLogicalName $env:UIPATH_TENANT `
+          --folder $env:UIPATH_FOLDER
 
-        $body = "grant_type=client_credentials&client_id=$env:UIPATH_CLIENT_ID&client_secret=$env:UIPATH_CLIENT_SECRET&scope=OR.Assets OR.Jobs OR.Machines OR.Monitoring OR.Queues OR.Robots OR.TestSets OR.TestSetExecutions OR.Execution OR.Folders OR.Environments OR.Releases"
-
-        $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
-          -Method Post -Body $body -ContentType "application/x-www-form-urlencoded"
-        $token = $response.access_token
-
-        $uploadUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Processes/UiPath.Server.Configuration.OData.UploadPackage"
-
-        $headers = @{ Authorization = "Bearer $token" }
-
-        $form = @{
-          file = Get-Item $packagePath
-        }
-
-        Invoke-RestMethod -Uri $uploadUrl -Headers $headers -Method Post -Form $form
-
-    - name: Start Job in Orchestrator (optional)
-      shell: pwsh
-      env:
-        UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
-        UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
-        UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
-        UIPATH_TENANT: DefaultTenant
-        UIPATH_FOLDER: Shared
-        UIPATH_PROJECT_NAME: TestAutomationProject
+    - name: Run UiPath Job
       run: |
-        $body = "grant_type=client_credentials&client_id=$env:UIPATH_CLIENT_ID&client_secret=$env:UIPATH_CLIENT_SECRET&scope=OR.Jobs"
-        $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" -Method Post -Body $body -ContentType "application/x-www-form-urlencoded"
-        $token = $response.access_token
-
-        $headers = @{ Authorization = "Bearer $token" }
-        $processName = $env:UIPATH_PROJECT_NAME
-
-        $processesUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Processes?\$filter=Name eq '$processName'"
-        $processResp = Invoke-RestMethod -Uri $processesUrl -Headers $headers
-
-        if ($processResp.value.Count -eq 0) {
-          Write-Error "Process '$processName' not found"
-          exit 1
-        }
-
-        $releaseKey = $processResp.value[0].Key
-        $startJobUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs"
-
-        $jobBody = @{
-          startInfo = @{
-            ReleaseKey = $releaseKey
-            Strategy = "All"
-          }
-        } | ConvertTo-Json -Depth 10
-
-        Invoke-RestMethod -Uri $startJobUrl -Headers $headers -Method Post -Body $jobBody -ContentType "application/json"
-        Write-Host "Job started"
+        & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" execute `
+          --process-name "$env:UIPATH_PROJECT_NAME" `
+          --folder "$env:UIPATH_FOLDER"
