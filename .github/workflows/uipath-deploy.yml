@@ -7,134 +7,119 @@ on:
 
 jobs:
   build_publish_run:
-    runs-on: windows-latest  # or self-hosted if you have one
+    runs-on: windows-latest
 
     env:
-      UIPATH_CLIENT_ID: "21a6955b-2fbe-4cd4-8d71-4124dff739ce"
-      UIPATH_CLIENT_SECRET: "1ljhMu$Db!6boY6W"
-      UIPATH_ACCOUNT_LOGICAL_NAME: "testbfsvyha"
-      UIPATH_TENANT: "DefaultTenant"
-      UIPATH_FOLDER: "Shared"
-      UIPATH_PROJECT_NAME: "TestAutomationProject"
+      UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
+      UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
+      UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
+      UIPATH_TENANT: DefaultTenant
+      UIPATH_FOLDER: Shared
+      UIPATH_PROJECT_NAME: TestAutomationProject
+      DOTNET_ROOT: C:\Program Files\dotnet
 
     steps:
-    - name: Checkout repo
+    - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Setup .NET (in case needed)
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: '7.0.x'
+    - name: Install UiPath CLI via dotnet tool
+      run: dotnet tool install --global UiPath.CLI.Tool --version 23.10.8890
 
-    - name: Build UiPath package using CLI
+    - name: Add UiPath CLI to PATH
+      run: echo "$env:USERPROFILE\.dotnet\tools" | Out-File -Append -Encoding ascii $env:GITHUB_PATH
+
+    - name: Pack UiPath project
       shell: pwsh
       run: |
         $projectPath = "$env:GITHUB_WORKSPACE"
         $outputPath = "$projectPath\output"
-
-        # Create output directory
         New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
 
-        # Build .nupkg using UiPath CLI (adjust CLI path if needed)
-        $cliPath = "C:\Program Files\UiPath\CLI\UiPath.CLI.exe"
-        if (!(Test-Path $cliPath)) {
-          Write-Error "UiPath CLI not found at $cliPath"
-          exit 1
-        }
-
-        & "$cliPath" pack `
+        UiPath.CLI pack `
           --project-path "$projectPath" `
           --output-folder "$outputPath" `
           --no-version
 
-        # Show resulting package
         Get-ChildItem "$outputPath" -Filter *.nupkg
 
     - name: Upload package to Orchestrator
       shell: pwsh
       run: |
-        $package = Get-ChildItem "$env:GITHUB_WORKSPACE\output" -Filter *.nupkg | Select-Object -First 1
-        if (-not $package) {
-          Write-Error "No .nupkg found in output folder"
-          exit 1
-        }
+        $clientId = $env:UIPATH_CLIENT_ID
+        $clientSecret = $env:UIPATH_CLIENT_SECRET
+        $scope = "OR.Deployment OR.Jobs"
 
-        $body = @{
-          grant_type = "client_credentials"
-          client_id = $env:UIPATH_CLIENT_ID
-          client_secret = $env:UIPATH_CLIENT_SECRET
-          scope = "OR.Assets OR.Machines OR.Robots OR.Jobs OR.Execution OR.Folders"
-        }
+        $body = "grant_type=client_credentials&client_id=$clientId&client_secret=$clientSecret&scope=$scope"
 
         $tokenResponse = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
-          -Method POST `
+          -Method Post `
           -Body $body `
           -ContentType "application/x-www-form-urlencoded"
 
         $accessToken = $tokenResponse.access_token
-        Write-Host "::add-mask::$accessToken"
+
+        $nupkgPath = Get-ChildItem "$env:GITHUB_WORKSPACE\output" -Filter *.nupkg | Select-Object -First 1
+
+        if (!$nupkgPath) {
+          Write-Error "No package found to upload."
+          exit 1
+        }
 
         $uploadUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Processes/UiPath.Server.Configuration.OData.UploadPackage"
 
         $form = @{
-          file = Get-Item $package.FullName
+          file = Get-Item $nupkgPath.FullName
         }
 
         Invoke-RestMethod -Uri $uploadUrl `
-          -Method Post `
           -Headers @{ Authorization = "Bearer $accessToken" } `
+          -Method Post `
           -Form $form
 
-        Write-Host "Package uploaded successfully: $($package.Name)"
+        Write-Host "Package uploaded successfully"
 
-    - name: Start job in Orchestrator
+    - name: Start job in Orchestrator (optional)
       shell: pwsh
       run: |
-        # Auth again
-        $body = @{
-          grant_type = "client_credentials"
-          client_id = $env:UIPATH_CLIENT_ID
-          client_secret = $env:UIPATH_CLIENT_SECRET
-          scope = "OR.Jobs OR.Execution"
-        }
+        $clientId = $env:UIPATH_CLIENT_ID
+        $clientSecret = $env:UIPATH_CLIENT_SECRET
+        $scope = "OR.Jobs"
+
+        $body = "grant_type=client_credentials&client_id=$clientId&client_secret=$clientSecret&scope=$scope"
 
         $tokenResponse = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
-          -Method POST `
+          -Method Post `
           -Body $body `
           -ContentType "application/x-www-form-urlencoded"
 
         $accessToken = $tokenResponse.access_token
 
-        # Find the release key for the process
-        $processName = $env:UIPATH_PROJECT_NAME
-        $getReleaseUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Releases?\$filter=ProcessKey eq '$processName'"
+        $processName = "$env:UIPATH_PROJECT_NAME"
 
-        $releaseResp = Invoke-RestMethod -Uri $getReleaseUrl `
-          -Headers @{ Authorization = "Bearer $accessToken" }
+        $processesUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Processes?`$filter=Name eq '$processName'"
 
-        if ($releaseResp.value.Count -eq 0) {
-          Write-Error "No release found for process '$processName'"
+        $processesResponse = Invoke-RestMethod -Uri $processesUrl -Headers @{ Authorization = "Bearer $accessToken" }
+
+        if ($processesResponse.value.Count -eq 0) {
+          Write-Error "Process '$processName' not found in Orchestrator"
           exit 1
         }
 
-        $releaseKey = $releaseResp.value[0].Key
+        $processKey = $processesResponse.value[0].Key
 
-        # Start the job
         $startJobUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs"
 
-        $jobPayload = @{
+        $jobBody = @{
           startInfo = @{
-            ReleaseKey = $releaseKey
+            ReleaseKey = $processKey
             Strategy = "All"
-            RobotIds = @()
-            InputArguments = "{}"
           }
         } | ConvertTo-Json -Depth 10
 
         Invoke-RestMethod -Uri $startJobUrl `
-          -Method Post `
           -Headers @{ Authorization = "Bearer $accessToken" } `
-          -Body $jobPayload `
+          -Method Post `
+          -Body $jobBody `
           -ContentType "application/json"
 
         Write-Host "Job started successfully"
