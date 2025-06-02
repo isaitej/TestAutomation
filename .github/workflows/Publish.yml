@@ -5,8 +5,6 @@ on:
     branches: [main]
 
 env:
-  UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce.Trim()
-  UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
   UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
   UIPATH_TENANT: DefaultTenant
   UIPATH_ORCH_URL: https://cloud.uipath.com
@@ -16,42 +14,52 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Authenticate to Orchestrator
+      - name: Authenticate to Orchestrator and get access token
         id: auth
         shell: pwsh
-        env:
-          UIPATH_CLIENT_ID: ${{ env.UIPATH_CLIENT_ID }}
-          UIPATH_CLIENT_SECRET: ${{ env.UIPATH_CLIENT_SECRET }}
-          UIPATH_ORCH_URL: ${{ env.UIPATH_ORCH_URL }}
         run: |
-          $body = @{
-            grant_type = "client_credentials"
-            client_id = $env:UIPATH_CLIENT_ID
-            client_secret = $env:UIPATH_CLIENT_SECRET
-            scope = "openid"
-          } | ConvertTo-Json
+          $clientId = "21a6955b-2fbe-4cd4-8d71-4124dff739ce"
+          $clientSecret = "1ljhMu`$Db!6boY6W"  # Escape $ for PowerShell
+          $scope = "OR.Jobs"
+          
+          $body = "grant_type=client_credentials&client_id=$clientId&client_secret=$clientSecret&scope=$scope"
+          
+          try {
+              $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
+                  -Method Post `
+                  -Body $body `
+                  -ContentType "application/x-www-form-urlencoded" `
+                  -ErrorAction Stop
 
-          $response = Invoke-RestMethod -Method Post -Uri "$($env:UIPATH_ORCH_URL)/identity_/connect/token" `
-                        -Body $body -ContentType "application/json"
-          echo "::set-output name=token::$($response.access_token)"
+              Write-Output "Access token received"
+              echo "::set-output name=token::$($response.access_token)"
+          }
+          catch {
+              Write-Error "Authentication failed: $_"
+              exit 1
+          }
 
       - name: Upload package to Orchestrator
         shell: pwsh
         env:
-          UIPATH_ORCH_URL: ${{ env.UIPATH_ORCH_URL }}
+          UIPATH_ORCH_URL: https://cloud.uipath.com
           ORCH_TOKEN: ${{ steps.auth.outputs.token }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
         run: |
           $packagePath = "$env:GITHUB_WORKSPACE\path\to\your\package.nupkg"
           if (-Not (Test-Path $packagePath)) {
             Write-Error "Package file not found at $packagePath"
             exit 1
           }
-          
-          Invoke-RestMethod -Uri "$($env:UIPATH_ORCH_URL)/odata/Packages/UiPath.Server.Configuration.OData.UploadPackage" `
+
+          Write-Output "Uploading package: $packagePath"
+          Invoke-RestMethod -Uri "$env:UIPATH_ORCH_URL/odata/Packages/UiPath.Server.Configuration.OData.UploadPackage" `
             -Method Post `
             -Headers @{ Authorization = "Bearer $env:ORCH_TOKEN" } `
             -InFile $packagePath `
             -ContentType "application/octet-stream"
+
+          Write-Output "Package upload completed"
