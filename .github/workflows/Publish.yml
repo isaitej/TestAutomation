@@ -1,36 +1,39 @@
-name: UiPath Automation using UiRobot.exe
+name: UiPath Automation Workflow
 
 on:
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
+
+env:
+  UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
+  UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
+  UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
+  UIPATH_TENANT: DefaultTenant
+  UIPATH_FOLDER: Shared
+  UIPATH_PROJECT_NAME: TestAutomationProject
 
 jobs:
   uipath-process:
     runs-on: windows-latest
 
-    env:
-      UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
-      UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
-      UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
-      UIPATH_TENANT_LOGICAL_NAME: DefaultTenant
-      UIPATH_FOLDER: Shared
-      UIPATH_PROJECT_NAME: TestAutomationProject
-
     steps:
-    - name: Checkout Repository
+    - name: Checkout repository
       uses: actions/checkout@v3
 
     - name: Pack UiPath Project using UiRobot.exe
       shell: pwsh
       run: |
         $projectJson = "$env:GITHUB_WORKSPACE\project.json"
-        $outputPath = "$env:GITHUB_WORKSPACE\output"
-        New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
+        $outputFolder = "$env:GITHUB_WORKSPACE\output"
+        New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
 
         & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" pack `
           "$projectJson" `
-          --output "$outputPath"
+          -o "$outputFolder"
 
-    - name: Upload .nupkg Artifact
+    - name: Upload Packed .nupkg as Artifact
       uses: actions/upload-artifact@v3
       with:
         name: uipath-nuget-package
@@ -39,14 +42,14 @@ jobs:
     - name: Publish Package to Orchestrator
       shell: pwsh
       run: |
-        $package = Get-ChildItem "$env:GITHUB_WORKSPACE\output\*.nupkg" | Select-Object -First 1
+        $packagePath = Get-ChildItem "$env:GITHUB_WORKSPACE\output\*.nupkg" | Select-Object -First 1
         & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" upload `
-          --file "$($package.FullName)" `
-          --clientId "$env:UIPATH_CLIENT_ID" `
-          --clientSecret "$env:UIPATH_CLIENT_SECRET" `
-          --accountLogicalName "$env:UIPATH_ACCOUNT_LOGICAL_NAME" `
-          --tenantLogicalName "$env:UIPATH_TENANT_LOGICAL_NAME" `
-          --folder "$env:UIPATH_FOLDER"
+          --file "$($packagePath.FullName)" `
+          --clientId $env:UIPATH_CLIENT_ID `
+          --clientSecret $env:UIPATH_CLIENT_SECRET `
+          --accountLogicalName $env:UIPATH_ACCOUNT_LOGICAL_NAME `
+          --tenantLogicalName $env:UIPATH_TENANT `
+          --folder $env:UIPATH_FOLDER
 
     - name: Run UiPath Job
       shell: pwsh
