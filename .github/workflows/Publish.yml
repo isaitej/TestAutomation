@@ -1,10 +1,10 @@
-name: UiPath Automation Workflow
+name: UiPath Automation with UiRobot.exe
 
 on:
   workflow_dispatch:
 
 jobs:
-  uipath-process:
+  uipath-job:
     runs-on: windows-latest
 
     env:
@@ -16,21 +16,21 @@ jobs:
       UIPATH_PROJECT_NAME: TestAutomationProject
 
     steps:
-    - name: Checkout repository
+    - name: Checkout source code
       uses: actions/checkout@v3
 
     - name: Pack UiPath Project using UiRobot.exe
       shell: pwsh
       run: |
-        $projectJson = "$env:GITHUB_WORKSPACE\project.json"
-        $outputFolder = "$env:GITHUB_WORKSPACE\output"
-        New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
+        $projectPath = "$env:GITHUB_WORKSPACE\project.json"
+        $outputDir = "$env:GITHUB_WORKSPACE\output"
+        New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 
         & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" pack `
-          "$projectJson" `
-          --output "$outputFolder"
+          "$projectPath" `
+          --output "$outputDir"
 
-    - name: Upload Packed .nupkg as Artifact
+    - name: Upload the .nupkg file
       uses: actions/upload-artifact@v3
       with:
         name: uipath-nuget-package
@@ -48,7 +48,7 @@ jobs:
           --tenantLogicalName "$env:UIPATH_TENANT_LOGICAL_NAME" `
           --folder "$env:UIPATH_FOLDER"
 
-    - name: Run UiPath Job
+    - name: Start UiPath Job
       shell: pwsh
       run: |
         & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" execute `
