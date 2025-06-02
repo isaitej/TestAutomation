@@ -1,10 +1,10 @@
-name: Publish UiPath Project to Orchestrator
+name: UiPath Automation Workflow
 
 on:
   workflow_dispatch:
 
 jobs:
-  publish-uipath-project:
+  uipath-process:
     runs-on: windows-latest
 
     env:
@@ -13,36 +13,44 @@ jobs:
       UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
       UIPATH_TENANT_LOGICAL_NAME: DefaultTenant
       UIPATH_FOLDER: Shared
-      UIPATH_ORCH_URL: https://cloud.uipath.com
+      UIPATH_PROJECT_NAME: TestAutomationProject
 
     steps:
-    - name: Checkout source code
+    - name: Checkout repository
       uses: actions/checkout@v3
 
-    - name: Set up .NET SDK (required for UiPath CLI)
-      uses: actions/setup-dotnet@v3
+    - name: Pack UiPath Project using UiRobot.exe
+      shell: pwsh
+      run: |
+        $projectJson = "$env:GITHUB_WORKSPACE\project.json"
+        $outputFolder = "$env:GITHUB_WORKSPACE\output"
+        New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
+
+        & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" pack `
+          "$projectJson" `
+          --output "$outputFolder"
+
+    - name: Upload Packed .nupkg as Artifact
+      uses: actions/upload-artifact@v3
       with:
-        dotnet-version: '6.x'
+        name: uipath-nuget-package
+        path: output\*.nupkg
 
-    - name: Install UiPath CLI
+    - name: Publish Package to Orchestrator
+      shell: pwsh
       run: |
-        dotnet tool install -g UiPath.CLI
+        $packagePath = Get-ChildItem "$env:GITHUB_WORKSPACE\output\*.nupkg" | Select-Object -First 1
+        & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" upload `
+          --file "$($packagePath.FullName)" `
+          --clientId "$env:UIPATH_CLIENT_ID" `
+          --clientSecret "$env:UIPATH_CLIENT_SECRET" `
+          --accountLogicalName "$env:UIPATH_ACCOUNT_LOGICAL_NAME" `
+          --tenantLogicalName "$env:UIPATH_TENANT_LOGICAL_NAME" `
+          --folder "$env:UIPATH_FOLDER"
 
-    - name: Add UiPath CLI to PATH
-      run: echo "$env:USERPROFILE\.dotnet\tools" | Out-File -Append -Encoding ascii $env:GITHUB_PATH
-
-    - name: Configure and authenticate with Orchestrator
+    - name: Run UiPath Job
+      shell: pwsh
       run: |
-        uipcli config set orchestratorUrl $env:UIPATH_ORCH_URL
-        uipcli config set accountLogicalName $env:UIPATH_ACCOUNT_LOGICAL_NAME
-        uipcli config set tenantLogicalName $env:UIPATH_TENANT_LOGICAL_NAME
-        uipcli login --client-id $env:UIPATH_CLIENT_ID --client-secret $env:UIPATH_CLIENT_SECRET
-
-    - name: Pack UiPath project
-      run: |
-        uipcli project pack ./project.json --output ./output
-
-    - name: Push package to Orchestrator
-      run: |
-        $package = Get-ChildItem ./output/*.nupkg | Select-Object -First 1
-        uipcli package push --file "$($package.FullName)" --folder "$env:UIPATH_FOLDER"
+        & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" execute `
+          --process-name "$env:UIPATH_PROJECT_NAME" `
+          --folder "$env:UIPATH_FOLDER"
