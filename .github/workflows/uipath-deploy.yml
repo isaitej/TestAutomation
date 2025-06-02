@@ -3,124 +3,91 @@ name: Build, Publish, and Run UiPath Process
 on:
   push:
     branches:
-      - main  # Adjust to your main branch if different
+      - main  # Adjust as needed
 
 jobs:
   build_publish_run:
     runs-on: windows-latest
 
-    env:
-      UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
-      UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
-      UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
-      UIPATH_TENANT: DefaultTenant
-      UIPATH_FOLDER: Shared
-      UIPATH_PROJECT_NAME: TestAutomationProject
-      DOTNET_ROOT: C:\Program Files\dotnet
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: '7.0.x'
+    - name: Pack UiPath Project using UiRobot.exe
+      shell: pwsh
+      run: |
+        $projectJson = "C:\Users\Saiteja.Indarapu\OneDrive - Elemica, Inc\Desktop\TestAutomationProject\project.json"
+        $outputPath = "C:\Users\Saiteja.Indarapu\OneDrive - Elemica, Inc\Desktop\TestAutomationProject\output"
+        & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" pack `
+          "$projectJson" -o "$outputPath"
+        Get-ChildItem "$outputPath" -Filter *.nupkg
 
-      - name: Install UiPath CLI via dotnet tool
-        run: dotnet tool install --global UiPath.CLI.Tool
+    - name: Upload package to Orchestrator
+      shell: pwsh
+      env:
+        UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
+        UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
+        UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
+        UIPATH_TENANT: DefaultTenant
+        UIPATH_FOLDER: Shared
+        UIPATH_PROJECT_NAME: TestAutomationProject
+      run: |
+        $packagePath = "C:\Users\Saiteja.Indarapu\OneDrive - Elemica, Inc\Desktop\TestAutomationProject\output\TestAutomationProject.1.0.0.nupkg"
+        if (!(Test-Path $packagePath)) {
+          Write-Error "Package not found: $packagePath"
+          exit 1
+        }
 
-      - name: Add UiPath CLI to PATH
-        run: echo "$env:USERPROFILE\.dotnet\tools" | Out-File -Append -Encoding ascii $env:GITHUB_PATH
+        $body = "grant_type=client_credentials&client_id=$env:UIPATH_CLIENT_ID&client_secret=$env:UIPATH_CLIENT_SECRET&scope=OR.Assets OR.Jobs OR.Machines OR.Monitoring OR.Queues OR.Robots OR.TestSets OR.TestSetExecutions OR.Execution OR.Folders OR.Environments OR.Releases"
 
-      - name: Pack UiPath project
-        shell: pwsh
-        run: |
-          $projectPath = "$env:GITHUB_WORKSPACE"
-          $outputPath = "$projectPath\output"
-          New-Item -ItemType Directory -Path $outputPath -Force | Out-Null
+        $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
+          -Method Post -Body $body -ContentType "application/x-www-form-urlencoded"
+        $token = $response.access_token
 
-          UiPath.CLI pack `
-            --project-path "$projectPath" `
-            --output-folder "$outputPath" `
-            --no-version
+        $uploadUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Processes/UiPath.Server.Configuration.OData.UploadPackage"
 
-          Get-ChildItem "$outputPath" -Filter *.nupkg
+        $headers = @{ Authorization = "Bearer $token" }
 
-      - name: Upload package to Orchestrator
-        shell: pwsh
-        run: |
-          $packagePath = Get-ChildItem "$env:GITHUB_WORKSPACE\output" -Filter *.nupkg | Select-Object -First 1
-          if (-not $packagePath) {
-            Write-Error "No .nupkg file found"
-            exit 1
+        $form = @{
+          file = Get-Item $packagePath
+        }
+
+        Invoke-RestMethod -Uri $uploadUrl -Headers $headers -Method Post -Form $form
+
+    - name: Start Job in Orchestrator (optional)
+      shell: pwsh
+      env:
+        UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
+        UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
+        UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
+        UIPATH_TENANT: DefaultTenant
+        UIPATH_FOLDER: Shared
+        UIPATH_PROJECT_NAME: TestAutomationProject
+      run: |
+        $body = "grant_type=client_credentials&client_id=$env:UIPATH_CLIENT_ID&client_secret=$env:UIPATH_CLIENT_SECRET&scope=OR.Jobs"
+        $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" -Method Post -Body $body -ContentType "application/x-www-form-urlencoded"
+        $token = $response.access_token
+
+        $headers = @{ Authorization = "Bearer $token" }
+        $processName = $env:UIPATH_PROJECT_NAME
+
+        $processesUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Processes?\$filter=Name eq '$processName'"
+        $processResp = Invoke-RestMethod -Uri $processesUrl -Headers $headers
+
+        if ($processResp.value.Count -eq 0) {
+          Write-Error "Process '$processName' not found"
+          exit 1
+        }
+
+        $releaseKey = $processResp.value[0].Key
+        $startJobUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs"
+
+        $jobBody = @{
+          startInfo = @{
+            ReleaseKey = $releaseKey
+            Strategy = "All"
           }
+        } | ConvertTo-Json -Depth 10
 
-          $body = @{
-            grant_type = "client_credentials"
-            client_id = "$env:UIPATH_CLIENT_ID"
-            client_secret = "$env:UIPATH_CLIENT_SECRET"
-            scope = "OR.Assets OR.Jobs OR.Machines OR.Queues OR.Robots OR.Execution OR.Folders OR.Processes"
-          }
-
-          $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
-            -Method POST `
-            -Body $body `
-            -ContentType "application/x-www-form-urlencoded"
-
-          $accessToken = $response.access_token
-          Write-Host "::add-mask::$accessToken"
-
-          $uploadUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Processes/UiPath.Server.Configuration.OData.UploadPackage"
-
-          $fileContent = Get-Content $packagePath.FullName -Encoding Byte
-
-          Invoke-RestMethod -Uri $uploadUrl `
-            -Headers @{ Authorization = "Bearer $accessToken" } `
-            -Method Post `
-            -Form @{ file = [System.IO.File]::OpenRead($packagePath.FullName) }
-
-          Write-Host "Package uploaded successfully"
-
-      - name: Start job in Orchestrator (optional)
-        shell: pwsh
-        run: |
-          $body = @{
-            grant_type = "client_credentials"
-            client_id = "$env:UIPATH_CLIENT_ID"
-            client_secret = "$env:UIPATH_CLIENT_SECRET"
-            scope = "OR.Jobs"
-          }
-
-          $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
-            -Method POST `
-            -Body $body `
-            -ContentType "application/x-www-form-urlencoded"
-
-          $accessToken = $response.access_token
-
-          $processName = "$env:UIPATH_PROJECT_NAME"
-
-          $processesUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Processes?\$filter=Name eq '$processName'"
-
-          $processesResponse = Invoke-RestMethod -Uri $processesUrl -Headers @{ Authorization = "Bearer $accessToken" }
-
-          if ($processesResponse.value.Count -eq 0) {
-            Write-Error "Process '$processName' not found in Orchestrator"
-            exit 1
-          }
-
-          $releaseKey = $processesResponse.value[0].Key
-
-          $startJobUrl = "https://cloud.uipath.com/$($env:UIPATH_ACCOUNT_LOGICAL_NAME)/$($env:UIPATH_TENANT)/odata/Jobs/UiPath.Server.Configuration.OData.StartJobs"
-
-          $jobBody = @{
-            startInfo = @{
-              ReleaseKey = $releaseKey
-              Strategy = "All"
-            }
-          } | ConvertTo-Json -Depth 10
-
-          Invoke-RestMethod -Uri $startJobUrl -Headers @{ Authorization = "Bearer $accessToken" } -Method POST -Body $jobBody -ContentType "application/json"
-
-          Write-Host "Job started successfully"
+        Invoke-RestMethod -Uri $startJobUrl -Headers $headers -Method Post -Body $jobBody -ContentType "application/json"
+        Write-Host "Job started"
