@@ -1,32 +1,55 @@
-name: Build UiPath Project
+name: UiPath Automation Workflow
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+
+env:
+  UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
+  UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
+  UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
+  UIPATH_TENANT: DefaultTenant
+  UIPATH_FOLDER: Shared
+  UIPATH_PROJECT_NAME: TestAutomationProject
+  DOTNET_ROOT: C:\Program Files\dotnet
 
 jobs:
-  build_nupkg:
+  uipath-process:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-      - name: Set up UiPath environment (self-hosted runner needs UiPath Robot/Studio)
-        run: |
-          # If you are using a self-hosted runner, make sure UiPath Robot/Studio is installed
-          # You might need to install UiRobot.exe or other UiPath dependencies on the runner.
+    - name: Pack UiPath Project using UiRobot.exe
+      shell: pwsh
+      run: |
+        $projectJson = "$env:GITHUB_WORKSPACE\project.json"
+        $outputFolder = "$env:GITHUB_WORKSPACE\output"
+        New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
 
-      - name: Build the UiPath .nupkg file
-        shell: pwsh
-        run: |
-          # Define the path to your project and output folder
-          $projectPath = "$PWD\TestAutomationProject"   # Modify the path as needed
-          $outputPath = "$PWD"                          # Modify the output folder if needed
+        & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" pack `
+          "$projectJson" `
+          --output "$outputFolder"
 
-          # Use UiRobot.exe to create the .nupkg file
-          & "C:\Program Files\UiPath\Studio\UiRobot.exe" pack --source $projectPath --output $outputPath --no-versioning
+    - name: Upload Packed .nupkg as Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: uipath-nuget-package
+        path: output\*.nupkg
 
-          # List the generated .nupkg files
-          Get-ChildItem -Path $outputPath -Filter *.nupkg
+    - name: Publish Package to Orchestrator
+      run: |
+        $packagePath = Get-ChildItem "$env:GITHUB_WORKSPACE\output\*.nupkg" | Select-Object -First 1
+        & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" upload `
+          --file "$($packagePath.FullName)" `
+          --clientId $env:UIPATH_CLIENT_ID `
+          --clientSecret $env:UIPATH_CLIENT_SECRET `
+          --accountLogicalName $env:UIPATH_ACCOUNT_LOGICAL_NAME `
+          --tenantLogicalName $env:UIPATH_TENANT `
+          --folder $env:UIPATH_FOLDER
+
+    - name: Run UiPath Job
+      run: |
+        & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" execute `
+          --process-name "$env:UIPATH_PROJECT_NAME" `
+          --folder "$env:UIPATH_FOLDER"
