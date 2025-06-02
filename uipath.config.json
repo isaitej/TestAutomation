@@ -6,6 +6,6 @@
     "clientId": "21a6955b-2fbe-4cd4-8d71-4124dff739ce",
     "clientSecret": "1ljhMu$Db!6boY6W",
     "refreshToken": "your_refresh_token",
-    "scopes": "OR.jobs
+    "scopes": "OR.jobs"
   }
 }
