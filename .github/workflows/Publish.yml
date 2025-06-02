@@ -1,0 +1,48 @@
+name: Publish UiPath Project to Orchestrator
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish-uipath-project:
+    runs-on: windows-latest
+
+    env:
+      UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
+      UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
+      UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
+      UIPATH_TENANT_LOGICAL_NAME: DefaultTenant
+      UIPATH_FOLDER: Shared
+      UIPATH_ORCH_URL: https://cloud.uipath.com
+
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@v3
+
+    - name: Set up .NET SDK (required for UiPath CLI)
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '6.x'
+
+    - name: Install UiPath CLI
+      run: |
+        dotnet tool install -g UiPath.CLI
+
+    - name: Add UiPath CLI to PATH
+      run: echo "$env:USERPROFILE\.dotnet\tools" | Out-File -Append -Encoding ascii $env:GITHUB_PATH
+
+    - name: Configure and authenticate with Orchestrator
+      run: |
+        uipcli config set orchestratorUrl $env:UIPATH_ORCH_URL
+        uipcli config set accountLogicalName $env:UIPATH_ACCOUNT_LOGICAL_NAME
+        uipcli config set tenantLogicalName $env:UIPATH_TENANT_LOGICAL_NAME
+        uipcli login --client-id $env:UIPATH_CLIENT_ID --client-secret $env:UIPATH_CLIENT_SECRET
+
+    - name: Pack UiPath project
+      run: |
+        uipcli project pack ./project.json --output ./output
+
+    - name: Push package to Orchestrator
+      run: |
+        $package = Get-ChildItem ./output/*.nupkg | Select-Object -First 1
+        uipcli package push --file "$($package.FullName)" --folder "$env:UIPATH_FOLDER"
