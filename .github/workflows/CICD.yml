@@ -1,4 +1,4 @@
-name: UiPath Automation using UiRobot.exe
+name: UiPath using UiRobot.exe
 
 on:
   workflow_dispatch:
