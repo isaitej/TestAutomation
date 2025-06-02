@@ -1,59 +1,55 @@
-name: UiPath Automation Workflow
-
-on:
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
-
-env:
-  UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
-  UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
-  UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
-  UIPATH_TENANT: DefaultTenant
-  UIPATH_FOLDER: Shared
-  UIPATH_PROJECT_NAME: TestAutomationProject
-
 jobs:
-  uipath-process:
+  deploy:
     runs-on: windows-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Pack UiPath Project using UiRobot.exe
-      shell: pwsh
-      run: |
-        $projectJson = "$env:GITHUB_WORKSPACE\project.json"
-        $outputFolder = "$env:GITHUB_WORKSPACE\output"
-        New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
+      - name: Pack project
+        shell: pwsh
+        run: |
+          $projectJson = "$env:GITHUB_WORKSPACE\project.json"
+          $outputFolder = "$env:GITHUB_WORKSPACE\output"
+          New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
+          & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" pack `
+            "$projectJson" `
+            -o "$outputFolder"
 
-        & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" pack `
-          "$projectJson" `
-          -o "$outputFolder"
+      - name: Authenticate to Orchestrator
+        shell: pwsh
+        env:
+          UIPATH_CLIENT_ID: your_client_id
+          UIPATH_CLIENT_SECRET: your_client_secret
+          UIPATH_ORCH_URL: https://cloud.uipath.com
+          UIPATH_TENANT: DefaultTenant
+          UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
+        run: |
+          $body = @{
+            grant_type = "client_credentials"
+            client_id = $env:UIPATH_CLIENT_ID
+            client_secret = $env:UIPATH_CLIENT_SECRET
+            scope = "openid"
+          } | ConvertTo-Json
 
-    - name: Upload Packed .nupkg as Artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: uipath-nuget-package
-        path: output\*.nupkg
+          $response = Invoke-RestMethod -Method Post -Uri "$($env:UIPATH_ORCH_URL)/identity_/connect/token" `
+                        -Body $body -ContentType "application/json"
+          $token = $response.access_token
+          Write-Output "TOKEN: $token"
+          echo "::set-output name=token::$token"
 
-    - name: Publish Package to Orchestrator
-      shell: pwsh
-      run: |
-        $packagePath = Get-ChildItem "$env:GITHUB_WORKSPACE\output\*.nupkg" | Select-Object -First 1
-        & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" upload `
-          --file "$($packagePath.FullName)" `
-          --clientId $env:UIPATH_CLIENT_ID `
-          --clientSecret $env:UIPATH_CLIENT_SECRET `
-          --accountLogicalName $env:UIPATH_ACCOUNT_LOGICAL_NAME `
-          --tenantLogicalName $env:UIPATH_TENANT `
-          --folder $env:UIPATH_FOLDER
+      - name: Upload package to Orchestrator
+        shell: pwsh
+        env:
+          UIPATH_ORCH_URL: https://cloud.uipath.com
+          ORCH_TOKEN: ${{ steps.authenticate.outputs.token }}
+          UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
+          UIPATH_TENANT: DefaultTenant
+        run: |
+          $packagePath = Get-ChildItem "$env:GITHUB_WORKSPACE\output\*.nupkg" | Select-Object -First 1
 
-    - name: Run UiPath Job
-      shell: pwsh
-      run: |
-        & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" execute `
-          --process-name "$env:UIPATH_PROJECT_NAME" `
-          --folder "$env:UIPATH_FOLDER"
+          Invoke-RestMethod -Method Post -Uri "$($env:UIPATH_ORCH_URL)/odata/Packages/UiPath.Server.Configuration.OData.UploadPackage" `
+            -Headers @{ Authorization = "Bearer $env:ORCH_TOKEN" } `
+            -InFile $packagePath.FullName `
+            -ContentType "multipart/form-data"
+
+      # Further steps for publishing process or starting job would follow
