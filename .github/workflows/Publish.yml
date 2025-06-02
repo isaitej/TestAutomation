@@ -1,74 +1,57 @@
-name: UiPath Publish to Orchestrator
+name: Upload UiPath Package
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    branches: [main]
+
+env:
+  UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
+  UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
+  UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
+  UIPATH_TENANT: DefaultTenant
+  UIPATH_ORCH_URL: https://cloud.uipath.com
 
 jobs:
-  deploy:
+  upload-package:
     runs-on: windows-latest
-    env:
-      UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
-      UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
-      UIPATH_ORCH_URL: https://cloud.uipath.com
-      UIPATH_TENANT: DefaultTenant
-      UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Pack UiPath Project
-        shell: pwsh
-        run: |
-          $projectJson = "$env:GITHUB_WORKSPACE\project.json"
-          $outputFolder = "$env:GITHUB_WORKSPACE\output"
-          New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
-          & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" pack `
-            "$projectJson" `
-            -o "$outputFolder"
-
       - name: Authenticate to Orchestrator
         id: auth
         shell: pwsh
+        env:
+          UIPATH_CLIENT_ID: ${{ env.UIPATH_CLIENT_ID }}
+          UIPATH_CLIENT_SECRET: ${{ env.UIPATH_CLIENT_SECRET }}
+          UIPATH_ORCH_URL: ${{ env.UIPATH_ORCH_URL }}
         run: |
-          $params = @{
+          $body = @{
             grant_type = "client_credentials"
-            client_id = "$env:UIPATH_CLIENT_ID"
-            client_secret = "$env:UIPATH_CLIENT_SECRET"
+            client_id = $env:UIPATH_CLIENT_ID
+            client_secret = $env:UIPATH_CLIENT_SECRET
             scope = "openid"
-          }
+          } | ConvertTo-Json
 
-          $body = $params.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } -join "&"
-
-          $response = Invoke-RestMethod -Method Post -Uri "$env:UIPATH_ORCH_URL/identity_/connect/token" `
-            -Body $body `
-            -ContentType "application/x-www-form-urlencoded"
-
-          Write-Host "Access token received"
+          $response = Invoke-RestMethod -Method Post -Uri "$($env:UIPATH_ORCH_URL)/identity_/connect/token" `
+                        -Body $body -ContentType "application/json"
           echo "::set-output name=token::$($response.access_token)"
 
       - name: Upload package to Orchestrator
         shell: pwsh
         env:
-          ORCH_TOKEN: ${{ steps.auth.outputs.token }}
           UIPATH_ORCH_URL: ${{ env.UIPATH_ORCH_URL }}
+          ORCH_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
-          $packagePath = Get-ChildItem "$env:GITHUB_WORKSPACE\output\*.nupkg" | Select-Object -First 1
-          if (-not $packagePath) { throw "Package not found." }
-
-          $headers = @{
-            Authorization = "Bearer $env:ORCH_TOKEN"
+          $packagePath = "$env:GITHUB_WORKSPACE\path\to\your\package.nupkg"
+          if (-Not (Test-Path $packagePath)) {
+            Write-Error "Package file not found at $packagePath"
+            exit 1
           }
-
-          $response = Invoke-RestMethod -Uri "$env:UIPATH_ORCH_URL/odata/Packages/UiPath.Server.Configuration.OData.UploadPackage" `
+          
+          Invoke-RestMethod -Uri "$($env:UIPATH_ORCH_URL)/odata/Packages/UiPath.Server.Configuration.OData.UploadPackage" `
             -Method Post `
-            -Headers $headers `
-            -InFile $packagePath.FullName `
-            -ContentType "multipart/form-data"
-
-          Write-Host "Package uploaded successfully."
+            -Headers @{ Authorization = "Bearer $env:ORCH_TOKEN" } `
+            -InFile $packagePath `
+            -ContentType "application/octet-stream"
