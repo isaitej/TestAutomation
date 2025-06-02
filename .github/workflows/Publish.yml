@@ -1,4 +1,4 @@
-name: Upload UiPath Package
+name: Build & Upload UiPath Package
 
 on:
   push:
@@ -12,47 +12,49 @@ env:
   UIPATH_ORCH_URL: https://cloud.uipath.com
 
 jobs:
-  upload-package:
+  build-and-upload:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Authenticate and get token
+      - name: Pack UiPath project
+        shell: pwsh
+        run: |
+          $projectPath = "$env:GITHUB_WORKSPACE\project.json"
+          $outputFolder = "$env:GITHUB_WORKSPACE\output"
+          New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
+          & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" pack $projectPath --output $outputFolder
+
+      - name: Get latest nupkg path
+        id: get-package
+        shell: pwsh
+        run: |
+          $nupkg = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\output" -Filter *.nupkg | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          echo "PACKAGE_PATH=$($nupkg.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Authenticate with UiPath Orchestrator
         id: auth
         shell: pwsh
         run: |
-          $clientId = "21a6955b-2fbe-4cd4-8d71-4124dff739ce"
-          $clientSecret = "1ljhMu`$Db!6boY6W"  # Escape `$ for PowerShell
-          $scope = "OR.Jobs"
+          $clientId = "${{ env.UIPATH_CLIENT_ID }}"
+          $clientSecret = "${{ env.UIPATH_CLIENT_SECRET }}"
+          $scope = "OR.Assets OR.Jobs OR.Machines OR.Execution OR.Folders"
           $body = "grant_type=client_credentials&client_id=$clientId&client_secret=$clientSecret&scope=$scope"
           $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
             -Method Post `
             -Body $body `
             -ContentType "application/x-www-form-urlencoded"
-          $token = $response.access_token
-          Write-Output "::add-mask::$token"
-          echo "::set-output name=token::$token"
+          echo "ORCH_TOKEN=$($response.access_token)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Upload .nupkg package to Orchestrator
+      - name: Upload Package to Orchestrator
         shell: pwsh
-        env:
-          ORCH_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
-          $packagePath = "C:\Users\Saiteja.Indarapu\.nuget\packages\testautomationproject\1.0.202204889\testautomationproject.1.0.202204889.nupkg"
-
-          if (-Not (Test-Path $packagePath)) {
-            Write-Error "Package file not found at $packagePath"
-            exit 1
-          }
-
-          Write-Output "Uploading package: $packagePath"
-
-          Invoke-RestMethod -Uri "https://cloud.uipath.com/odata/Packages/UiPath.Server.Configuration.OData.UploadPackage" `
+          Write-Host "Uploading: $env:PACKAGE_PATH"
+          Invoke-RestMethod -Uri "$env:UIPATH_ORCH_URL/$env:UIPATH_ACCOUNT_LOGICAL_NAME/$env:UIPATH_TENANT/odata/Packages/UiPath.Server.Configuration.OData.UploadPackage" `
             -Method Post `
             -Headers @{ Authorization = "Bearer $env:ORCH_TOKEN" } `
-            -InFile $packagePath `
+            -InFile $env:PACKAGE_PATH `
             -ContentType "application/octet-stream"
-
-          Write-Output "✅ Package upload completed"
+          Write-Host "✅ Package uploaded successfully"
