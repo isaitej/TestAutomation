@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 env:
-  UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
+  UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce.Trim()
   UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
   UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
   UIPATH_TENANT: DefaultTenant
