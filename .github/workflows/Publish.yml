@@ -4,13 +4,6 @@ on:
   push:
     branches: [main]
 
-env:
-  UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
-  UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
-  UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
-  UIPATH_TENANT: DefaultTenant
-  UIPATH_ORCH_URL: https://cloud.uipath.com
-
 jobs:
   build-and-upload:
     runs-on: windows-latest
@@ -19,13 +12,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Download UiPath CLI
+        run: |
+          Invoke-WebRequest -Uri "https://download.uipath.com/cli/UiPath.CLI.Windows.zip" -OutFile "uipath-cli.zip"
+          Expand-Archive uipath-cli.zip -DestinationPath "uipath-cli"
+
       - name: Pack UiPath project
         shell: pwsh
         run: |
           $projectPath = "$env:GITHUB_WORKSPACE\project.json"
           $outputFolder = "$env:GITHUB_WORKSPACE\output"
           New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
-          & "C:\Users\Saiteja.Indarapu\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" pack $projectPath --output $outputFolder
+          & "$env:GITHUB_WORKSPACE\uipath-cli\tools\uipcli.exe" project pack "$projectPath" --output "$outputFolder"
 
       - name: Get latest nupkg path
         id: get-package
@@ -38,21 +36,27 @@ jobs:
         id: auth
         shell: pwsh
         run: |
-          $clientId = "${{ env.UIPATH_CLIENT_ID }}"
-          $clientSecret = "${{ env.UIPATH_CLIENT_SECRET }}"
+          $clientId = "21a6955b-2fbe-4cd4-8d71-4124dff739ce"
+          $clientSecret = "1ljhMu$Db!6boY6W"
+          $accountLogicalName = "testbfsvyha"
+          $tenant = "DefaultTenant"
+          $orchUrl = "https://cloud.uipath.com"
           $scope = "OR.Assets OR.Jobs OR.Machines OR.Execution OR.Folders"
           $body = "grant_type=client_credentials&client_id=$clientId&client_secret=$clientSecret&scope=$scope"
-          $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
+          $response = Invoke-RestMethod -Uri "$orchUrl/identity_/connect/token" `
             -Method Post `
             -Body $body `
             -ContentType "application/x-www-form-urlencoded"
           echo "ORCH_TOKEN=$($response.access_token)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "ORCH_URL=$orchUrl" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "ACCOUNT_NAME=$accountLogicalName" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "TENANT=$tenant" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Upload Package to Orchestrator
         shell: pwsh
         run: |
           Write-Host "Uploading: $env:PACKAGE_PATH"
-          Invoke-RestMethod -Uri "$env:UIPATH_ORCH_URL/$env:UIPATH_ACCOUNT_LOGICAL_NAME/$env:UIPATH_TENANT/odata/Packages/UiPath.Server.Configuration.OData.UploadPackage" `
+          Invoke-RestMethod -Uri "$env:ORCH_URL/$env:ACCOUNT_NAME/$env:TENANT/odata/Packages/UiPath.Server.Configuration.OData.UploadPackage" `
             -Method Post `
             -Headers @{ Authorization = "Bearer $env:ORCH_TOKEN" } `
             -InFile $env:PACKAGE_PATH `
