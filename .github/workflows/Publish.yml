@@ -12,10 +12,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install UiPath CLI via NuGet
+      - name: Download UiPath CLI
+        shell: pwsh
         run: |
-          dotnet new tool-manifest
-          dotnet tool install --version 3.2.0 UiPath.CLI
+          $ErrorActionPreference = "Stop"
+          Invoke-WebRequest -Uri "https://github.com/UiPath/uipathcli/releases/latest/download/uipathcli-windows-amd64.zip" -OutFile "uipathcli.zip"
+          Expand-Archive -Path "uipathcli.zip" -DestinationPath "uipathcli"
 
       - name: Pack UiPath project
         shell: pwsh
@@ -23,7 +25,7 @@ jobs:
           $projectPath = "$env:GITHUB_WORKSPACE\project.json"
           $outputFolder = "$env:GITHUB_WORKSPACE\output"
           New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
-          dotnet uipcli project pack "$projectPath" --output "$outputFolder"
+          & "$env:GITHUB_WORKSPACE\uipathcli\uipcli.exe" project pack "$projectPath" --output "$outputFolder"
 
       - name: Get latest nupkg path
         id: get-package
