@@ -1,38 +1,31 @@
-name: Build & Upload UiPath Package
+name: Publish UiPath Package to Orchestrator
 
 on:
   push:
     branches: [main]
 
+env:
+  UIPATH_CLIENT_ID: 21a6955b-2fbe-4cd4-8d71-4124dff739ce
+  UIPATH_CLIENT_SECRET: 1ljhMu$Db!6boY6W
+  UIPATH_ACCOUNT_LOGICAL_NAME: testbfsvyha
+  UIPATH_TENANT: DefaultTenant
+  UIPATH_ORCH_URL: https://cloud.uipath.com
+
 jobs:
-  build-and-upload:
+  publish-package:
     runs-on: windows-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Download UiPath CLI
+      - name: Find .nupkg package
+        id: find-package
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
-          Invoke-WebRequest -Uri "https://github.com/UiPath/uipathcli/releases/latest/download/uipathcli-windows-amd64.zip" -OutFile "uipathcli.zip"
-          Expand-Archive -Path "uipathcli.zip" -DestinationPath "uipathcli"
-
-      - name: Pack UiPath project
-        shell: pwsh
-        run: |
-          $projectPath = "$env:GITHUB_WORKSPACE\project.json"
-          $outputFolder = "$env:GITHUB_WORKSPACE\output"
-          New-Item -ItemType Directory -Path $outputFolder -Force | Out-Null
-          & "$env:GITHUB_WORKSPACE\uipathcli\uipcli.exe" project pack "$projectPath" --output "$outputFolder"
-
-      - name: Get latest nupkg path
-        id: get-package
-        shell: pwsh
-        run: |
-          $nupkg = Get-ChildItem -Path "$env:GITHUB_WORKSPACE\output" -Filter *.nupkg | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          echo "PACKAGE_PATH=$($nupkg.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $package = Get-ChildItem -Path "$env:GITHUB_WORKSPACE" -Recurse -Filter *.nupkg | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $package) { throw "No .nupkg package found!" }
+          echo "PACKAGE_PATH=$($package.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Authenticate with UiPath Orchestrator
         id: auth
@@ -40,25 +33,19 @@ jobs:
         run: |
           $clientId = "21a6955b-2fbe-4cd4-8d71-4124dff739ce"
           $clientSecret = "1ljhMu$Db!6boY6W"
-          $accountLogicalName = "testbfsvyha"
-          $tenant = "DefaultTenant"
-          $orchUrl = "https://cloud.uipath.com"
           $scope = "OR.Assets OR.Jobs OR.Machines OR.Execution OR.Folders"
           $body = "grant_type=client_credentials&client_id=$clientId&client_secret=$clientSecret&scope=$scope"
-          $response = Invoke-RestMethod -Uri "$orchUrl/identity_/connect/token" `
+          $response = Invoke-RestMethod -Uri "https://cloud.uipath.com/identity_/connect/token" `
             -Method Post `
             -Body $body `
             -ContentType "application/x-www-form-urlencoded"
           echo "ORCH_TOKEN=$($response.access_token)" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "ORCH_URL=$orchUrl" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "ACCOUNT_NAME=$accountLogicalName" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "TENANT=$tenant" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Upload Package to Orchestrator
+      - name: Upload package to Orchestrator
         shell: pwsh
         run: |
-          Write-Host "Uploading: $env:PACKAGE_PATH"
-          Invoke-RestMethod -Uri "$env:ORCH_URL/$env:ACCOUNT_NAME/$env:TENANT/odata/Packages/UiPath.Server.Configuration.OData.UploadPackage" `
+          Write-Host "Uploading package: $env:PACKAGE_PATH"
+          Invoke-RestMethod -Uri "https://cloud.uipath.com/testbfsvyha/DefaultTenant/odata/Packages/UiPath.Server.Configuration.OData.UploadPackage" `
             -Method Post `
             -Headers @{ Authorization = "Bearer $env:ORCH_TOKEN" } `
             -InFile $env:PACKAGE_PATH `
