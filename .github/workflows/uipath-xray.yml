@@ -1,0 +1,55 @@
+name: UiPath Test to XRAY Integration
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-tests:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Pack UiPath Project
+      run: |
+        "C:\Users\runneradmin\AppData\Local\Programs\UiPath\Studio\UiRobot.exe" pack "YourProject\Main.xaml" --output nupkgs
+
+    - name: Publish to Orchestrator
+      run: |
+        UiPath.CLI.exe publish --orchestrator-url "${{ secrets.ORCH_URL }}" `
+                               --api-key "${{ secrets.ORCH_API_KEY }}" `
+                               --folder "${{ secrets.ORCH_FOLDER }}" `
+                               --package-path "nupkgs\TestAutomationProject.1.0.nupkg"
+
+    - name: Trigger Test Job
+      run: |
+        UiPath.CLI.exe jobs start --release-key <release_key> `
+                                  --folder "${{ secrets.ORCH_FOLDER }}" `
+                                  --strategy Specific `
+                                  --robot <robot_name>
+
+    - name: Copy test result
+      run: |
+        copy "C:\UiPathResults\results.xml" results.xml
+
+    - name: Get XRAY token
+      id: xray_auth
+      run: |
+        $body = @{
+          client_id = "${{ secrets.XRAY_CLIENT_ID }}"
+          client_secret = "${{ secrets.XRAY_CLIENT_SECRET }}"
+        } | ConvertTo-Json
+
+        $response = Invoke-RestMethod -Uri "https://xray.cloud.getxray.app/api/v2/authenticate" `
+                                      -Method Post -ContentType "application/json" `
+                                      -Body $body
+
+        echo "::set-output name=token::$response"
+
+    - name: Upload Test Results to XRAY
+      run: |
+        curl -X POST https://xray.cloud.getxray.app/api/v2/import/execution/junit `
+             -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" `
+             -H "Content-Type: application/xml" `
+             --data-binary "@results.xml"
