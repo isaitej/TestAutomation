@@ -2,5 +2,7 @@
   "Tags": [],
   "SeparateRuntimeDependencies": false,
   "IncludeSources": true,
-  "ConnectorKeys": []
+  "ConnectorKeys": [
+    "uipath-atlassian-jira"
+  ]
 }
